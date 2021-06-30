@@ -1,9 +1,10 @@
-use std::{borrow::Borrow, sync::{Arc, Mutex}};
+use std::{sync::{Arc, Mutex}};
 
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use fetcher::{Fetchable, FetcherProvider, http_fetcher::HttpFetcher};
 
 mod fetcher;
+mod cache;
 
 struct AppState {
     fetcher_provider: Mutex<FetcherProvider>,
@@ -18,7 +19,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     let fetcher = fetcher_provider.get(found_url);
 
     match fetcher {
-        Option::Some(fetcher) => {
+        Option::Some(_) => {
             return HttpResponse::Accepted().finish();
         }
         Option::None => {
@@ -29,13 +30,15 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     
 }
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let cache: Arc<Mutex<dyn cache::Cachable<fetcher::FetchedObject> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
     let fetcher_provider = web::Data::new(AppState {
         fetcher_provider: Mutex::new(FetcherProvider::new(
             Vec::from([
-                Arc::new(Box::new(HttpFetcher::new()) as Box<dyn Fetchable + Sync + Send>)
+                Arc::new(Box::new(HttpFetcher::new(
+                    cache.clone()
+                )) as Box<dyn Fetchable + Sync + Send>)
             ])
         ))
     });

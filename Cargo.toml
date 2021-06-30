@@ -12,3 +12,7 @@ actix-web = "3"
 async-trait = "0.1.50"
 bytes = "1.0.1"
 actix-rt = "2.2"
+mime = "0.3.16"
+
+[dev-dependencies]
+httpmock = "0.5.8"
