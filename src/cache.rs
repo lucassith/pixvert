@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 pub mod memory_cache;
 
 #[derive(Debug)]

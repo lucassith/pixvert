@@ -6,7 +6,6 @@ use actix_web::http::header;
 use crate::cache::{Cachable, CacheError};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::borrow::BorrowMut;
 
 pub struct HttpFetcher {
     reqwest: reqwest::Client,
@@ -101,7 +100,7 @@ impl Fetchable for HttpFetcher {
             self.cache.lock().as_mut().unwrap().set(
                 HttpFetcher::construct_hash(link),
                 fetched_object.clone(),
-            );
+            ).unwrap();
         }
 
         return Result::Ok(fetched_object);
@@ -111,55 +110,132 @@ impl Fetchable for HttpFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::memory_cache::MemoryCache;
     use httpmock::MockServer;
+    use httpmock::Method::GET;
     use crate::cache::CacheError;
     use crate::fetcher::{Fetchable, FetchedObject};
-    use std::sync::{Mutex, Arc};
+    use std::sync::{Mutex};
 
     struct CachableMock {
-
+        pub hashmap: Arc<Mutex<HashMap<String, FetchedObject>>>
     }
 
-    impl<T: Clone> Cachable<T> for CachableMock {
-        fn get(&self, link: &String) -> Result<T, CacheError> {
-            todo!()
+    impl Cachable<FetchedObject> for CachableMock {
+        fn get(&self, link: &String) -> Result<FetchedObject, CacheError> {
+            if link.contains("nocache") {
+                return Result::Err(CacheError::NoCacheEntry)
+            }
+            if link.contains("etag") {
+                let mut fetched_object = FetchedObject::default();
+                fetched_object.cache_info.insert(actix_web::http::header::ETAG.to_string(), "existing".to_string());
+                fetched_object.bytes = bytes::Bytes::from("cached-object-etag");
+                return Result::Ok(fetched_object);
+            }
+            return Result::Err(CacheError::NoCacheEntry)
         }
 
-        fn set(&mut self, link: String, object: T) -> Result<bool, CacheError> {
-            todo!()
+        fn set(&mut self, link: String, object: FetchedObject) -> Result<bool, CacheError> {
+            self.hashmap.lock().as_deref_mut().unwrap().insert(link, object);
+            return Result::Ok(true);
         }
 
-        fn delete(&mut self, link: &String) -> bool {
+        fn delete(&mut self, _: &String) -> bool {
             todo!()
         }
 
         fn count(&self) -> usize {
-            todo!()
+            return self.hashmap.lock().unwrap().len()
         }
     }
 
     #[actix_rt::test]
     async fn test_fetch_image() {
-
         let server = MockServer::start();
-        let url = server.url("/image.png");
+        let url = server.url("/nocache.png");
 
-        let image_mock = server.mock(|when, then| {
-            when.path("/image.png");
+        server.mock(|when, then| {
+            when.method(GET)
+                .path("/nocache.png");
             then.status(200)
                 .header(actix_web::http::header::CONTENT_TYPE.to_string(), mime::IMAGE_JPEG.to_string())
                 .body(String::from("jpg"));
         });
-        let cache_mock = CachableMock{};
+        let hashmap = Arc::new(Mutex::new(HashMap::new()));
+        let cache_mock = CachableMock{
+            hashmap: hashmap.clone()
+        };
         let cache: Arc<Mutex<dyn Cachable<FetchedObject> + Sync + Send>> = Arc::new(Mutex::new(
             cache_mock
         ));
         let fetcher = HttpFetcher::new(
             cache.clone(),
         );
-        //let image = fetcher.fetch(&url).await;
 
-        //println!("{:#?}", &image.unwrap());
+        assert_eq!(hashmap.clone().lock().unwrap().len(), 0);
+
+        let image = fetcher.fetch(&url).await.unwrap();
+
+        assert_eq!(image.bytes, bytes::Bytes::from("jpg"));
+        assert_eq!(image.mime, mime::IMAGE_JPEG);
+        assert_eq!(image.cache_info.len(), 0);
+        assert_eq!(hashmap.clone().lock().unwrap().len(), 1);
+        assert_eq!(
+            hashmap.clone().lock().as_deref().unwrap().into_iter().nth(0).unwrap().0,
+            &HttpFetcher::construct_hash(&url.to_string())
+        );
+    }
+
+    #[actix_rt::test]
+    async fn test_try_to_fetch_if_cache_found() {
+        let server = MockServer::start();
+        let url = server.url("/cached-etag.png");
+
+        server.mock(|when, then| {
+            when.method(GET)
+                .header_exists("ETAG".to_string())
+                .path("/cached-etag.png");
+            then.status(304)
+                .header(actix_web::http::header::CONTENT_TYPE.to_string(), mime::IMAGE_JPEG.to_string())
+                .body(String::from("new body"));
+        });
+        let cache_mock = CachableMock{
+            hashmap: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let cache: Arc<Mutex<dyn Cachable<FetchedObject> + Sync + Send>> = Arc::new(Mutex::new(
+            cache_mock
+        ));
+        let fetcher = HttpFetcher::new(
+            cache.clone(),
+        );
+        let image = fetcher.fetch(&url).await.unwrap();
+
+        assert_eq!(image.bytes, bytes::Bytes::from("cached-object-etag"));
+    }
+
+    #[actix_rt::test]
+    async fn test_try_to_fetch_if_cache_found_but_newer_exists() {
+        let server = MockServer::start();
+        let url = server.url("/cached-etag.png");
+
+        server.mock(|when, then| {
+            when.method(GET)
+                .header_exists("ETAG".to_string())
+                .path("/cached-etag.png");
+            then.status(200)
+                .header(actix_web::http::header::CONTENT_TYPE.to_string(), mime::IMAGE_JPEG.to_string())
+                .body(String::from("new body"));
+        });
+        let cache_mock = CachableMock{
+            hashmap: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let cache: Arc<Mutex<dyn Cachable<FetchedObject> + Sync + Send>> = Arc::new(Mutex::new(
+            cache_mock
+        ));
+        let fetcher = HttpFetcher::new(
+            cache.clone(),
+        );
+        let image = fetcher.fetch(&url).await.unwrap();
+
+        assert_eq!(image.bytes, bytes::Bytes::from("new body"));
     }
 }
