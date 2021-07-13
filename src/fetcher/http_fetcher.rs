@@ -22,14 +22,13 @@ impl HttpFetcher {
 
     async fn fetch_with_meta(&self, link: &String, cached_meta: &HashMap<String, String>) -> Result<reqwest::Response, reqwest::Error> {
         let mut request_builder = self.reqwest.get(link);
-        for header in vec![header::ETAG, header::LAST_MODIFIED] {
-            match cached_meta.get(header.as_str()) {
-                Some(value) => {
-                    request_builder = request_builder.header(&header, value);
-                }
-                _ => (),
-            }
+        if let Some(etag) = cached_meta.get(header::ETAG.as_str()) {
+            request_builder = request_builder.header(header::IF_NONE_MATCH, etag);
         }
+        if let Some(modified_date) = cached_meta.get(header::LAST_MODIFIED.as_str()) {
+            request_builder = request_builder.header(header::IF_MODIFIED_SINCE, modified_date);
+        }
+        log::trace!("Trying to fetch resource with headers {:#?}", request_builder);
         request_builder.send().await
     }
 
@@ -56,33 +55,43 @@ impl Fetchable for HttpFetcher {
 
     async fn fetch(&self, link: &String) -> Result<FetchedObject, FetchError> {
         let cached_object: Result<FetchedObject, CacheError>;
+        let hash = &HttpFetcher::construct_hash(link);
         {
+            log::info!("Looking for hash {:#}", hash);
             cached_object = self.cache.lock().unwrap().get(&HttpFetcher::construct_hash(link));
         }
 
         let response: reqwest::Response = match &cached_object {
             Ok(cached_object) => {
+                log::trace!("Found cached object: {} - mime: {}, cache_info: {:#?}.", hash, cached_object.mime, cached_object.cache_info);
                 self.fetch_with_meta(link, &cached_object.cache_info).await?
             }
             Err(_) => {
+                log::trace!("Object {} not found in cache.", hash);
                 self.fetch_with_meta(link, &HashMap::new()).await?
             }
         };
 
+        log::trace!("Object {} returned status: {}", hash, response.status());
+
         if response.status() == actix_web::http::StatusCode::NOT_MODIFIED {
+            log::info!("Object {} not modified. Serving cache.", hash);
             return Result::Ok(cached_object.unwrap());
         }
 
         if !response.status().is_success() {
+            let message = format!("Failed to fetch object. URL {}, Code: {}", link.clone(), response.status().to_string());
+            log::error!("{}", message);
             return Result::Err(FetchError::FetchFailed(
-                format!("Failed to fetch object. URL {}, Code: {}", link.clone(), response.status().to_string())
+                message
             ));
         }
         let mut fetched_object = FetchedObject::default();
         for header in vec![header::ETAG, header::LAST_MODIFIED] {
             match response.headers().get(&header) {
-                Some(etag) => {
-                    fetched_object.cache_info.insert(header.to_string(), etag.to_str().unwrap().to_string());
+                Some(header_value) => {
+                    log::info!("Cache info. Object: {}, Header: {}, Value: {:#?}", hash, header, header_value);
+                    fetched_object.cache_info.insert(header.to_string(), header_value.to_str().unwrap().to_string());
                 }
                 _ => (),
             }
