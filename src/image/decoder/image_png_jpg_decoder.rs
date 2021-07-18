@@ -1,29 +1,33 @@
-use image::{GenericImage, ImageFormat};
+use image::{ ImageFormat};
 use crate::cache::Cachable;
 use crate::image::decoder::{ImageDecoder, DecodeError};
 use std::sync::{Mutex, Arc};
-use mime::Mime;
 use crate::fetcher::FetchedObject;
 use crate::image::DecodedImage;
 use image::io::Reader;
 use std::io::Cursor;
 use async_trait::async_trait;
-use bytes::Buf;
 
-pub struct ImageCreateDecoder {
+
+pub struct ImagePngJpgDecoder {
     cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>,
 }
 
-#[async_trait]
-impl ImageDecoder for ImageCreateDecoder {
-    fn can_decode(mime: Mime) -> bool {
-        if mime.eq(&mime::IMAGE_JPEG) || mime.eq(&mime::IMAGE_PNG) {
-            return true;
+impl ImagePngJpgDecoder {
+    pub fn new(cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>) -> ImagePngJpgDecoder {
+        return ImagePngJpgDecoder{
+            cache
         }
-        return false;
+    }
+}
+
+#[async_trait]
+impl ImageDecoder for ImagePngJpgDecoder {
+    fn can_decode(&self, mime: &String) -> bool {
+        mime.eq(&mime::IMAGE_JPEG.to_string()) || mime.eq(&mime::IMAGE_PNG.to_string())
     }
 
-    async fn decode(origin_url: String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError> {
+    async fn decode(&self, origin_url: &String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError> {
         let format = if fetched_object.mime.eq(&mime::IMAGE_JPEG) {
             ImageFormat::Jpeg
         } else {

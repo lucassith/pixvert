@@ -1,13 +1,15 @@
-use mime::Mime;
-use crate::fetcher::FetchedObject;
-use image::GenericImage;
-use crate::image::DecodedImage;
+use crate::image::{DecodedImage, EncodedImage};
 use async_trait::async_trait;
+use std::fmt::Error;
+use crate::service_provider::Service;
 
-pub mod image_create_decoder;
+pub mod image_webp_encoder;
+
+pub trait ImageEncoderService: Service + ImageEncoder {
+
+}
 
 #[async_trait]
-pub trait ImageDecoder {
-    fn can_decode(mime: Mime) -> bool;
-    async fn decode(origin_url: String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError>;
+pub trait ImageEncoder {
+    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage) -> Result<EncodedImage, Error>;
 }

@@ -16,6 +16,7 @@ mime = "0.3.16"
 log = "0.4.14"
 log4rs = "1.0.0"
 image = "0.23.14"
+webp = "0.1.3"
 
 [dev-dependencies]
 httpmock = "0.5.8"

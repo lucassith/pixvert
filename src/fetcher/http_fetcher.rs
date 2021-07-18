@@ -1,11 +1,12 @@
 use super::Fetchable;
 use async_trait::async_trait;
 use reqwest::{Url};
-use crate::fetcher::{FetchedObject, FetchError};
+use crate::fetcher::{FetchedObject, FetchError, FetchableService};
 use actix_web::http::header;
 use crate::cache::{Cachable, CacheError};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use crate::service_provider::Service;
 
 pub struct HttpFetcher {
     reqwest: reqwest::Client,
@@ -47,12 +48,18 @@ impl From<reqwest::Error> for FetchError {
     }
 }
 
-#[async_trait]
-impl Fetchable for HttpFetcher {
-    fn can_fetch(&self, link: &String) -> bool {
+impl Service for HttpFetcher {
+    fn can_be_used(&self, link: &String) -> bool {
         Url::parse(link).is_ok()
     }
+}
 
+impl FetchableService for HttpFetcher {
+
+}
+
+#[async_trait]
+impl Fetchable for HttpFetcher {
     async fn fetch(&self, link: &String) -> Result<FetchedObject, FetchError> {
         let cached_object: Result<FetchedObject, CacheError>;
         let hash = &HttpFetcher::construct_hash(link);
