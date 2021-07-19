@@ -16,6 +16,5 @@ pub trait ImageDecoderService: ImageDecoder + Service {
 
 #[async_trait]
 pub trait ImageDecoder {
-    fn can_decode(&self, mime: &String) -> bool;
     async fn decode(&self, origin_url: &String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError>;
 }

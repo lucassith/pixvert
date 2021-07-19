@@ -7,6 +7,8 @@ use crate::cache::{Cachable, CacheError};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use crate::service_provider::Service;
+use urlencoding::decode;
+use std::borrow::Cow;
 
 pub struct HttpFetcher {
     reqwest: reqwest::Client,
@@ -36,6 +38,10 @@ impl HttpFetcher {
     fn construct_hash(link: &String) -> String {
         return String::from("HTTP-Fetcher-Cache-") + link.as_str();
     }
+
+    fn decode_url(link: &String) -> String {
+        String::from(&*decode(link).unwrap_or(Cow::from("")))
+    }
 }
 
 impl From<reqwest::Error> for FetchError {
@@ -50,7 +56,7 @@ impl From<reqwest::Error> for FetchError {
 
 impl Service for HttpFetcher {
     fn can_be_used(&self, link: &String) -> bool {
-        Url::parse(link).is_ok()
+        Url::parse(&HttpFetcher::decode_url(link)).is_ok()
     }
 }
 
@@ -61,6 +67,7 @@ impl FetchableService for HttpFetcher {
 #[async_trait]
 impl Fetchable for HttpFetcher {
     async fn fetch(&self, link: &String) -> Result<FetchedObject, FetchError> {
+        let link = &HttpFetcher::decode_url(link);
         let cached_object: Result<FetchedObject, CacheError>;
         let hash = &HttpFetcher::construct_hash(link);
         {

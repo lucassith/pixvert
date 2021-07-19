@@ -1,12 +1,13 @@
 use image::{ ImageFormat};
 use crate::cache::Cachable;
-use crate::image::decoder::{ImageDecoder, DecodeError};
+use crate::image::decoder::{ImageDecoder, DecodeError, ImageDecoderService};
 use std::sync::{Mutex, Arc};
 use crate::fetcher::FetchedObject;
 use crate::image::DecodedImage;
 use image::io::Reader;
 use std::io::Cursor;
 use async_trait::async_trait;
+use crate::service_provider::Service;
 
 
 pub struct ImagePngJpgDecoder {
@@ -21,12 +22,18 @@ impl ImagePngJpgDecoder {
     }
 }
 
+impl ImageDecoderService for ImagePngJpgDecoder {
+
+}
+
+impl Service for ImagePngJpgDecoder {
+    fn can_be_used(&self, resource: &String) -> bool {
+        return resource.eq(&mime::IMAGE_JPEG.to_string()) || resource.eq(&mime::IMAGE_PNG.to_string());
+    }
+}
+
 #[async_trait]
 impl ImageDecoder for ImagePngJpgDecoder {
-    fn can_decode(&self, mime: &String) -> bool {
-        mime.eq(&mime::IMAGE_JPEG.to_string()) || mime.eq(&mime::IMAGE_PNG.to_string())
-    }
-
     async fn decode(&self, origin_url: &String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError> {
         let format = if fetched_object.mime.eq(&mime::IMAGE_JPEG) {
             ImageFormat::Jpeg

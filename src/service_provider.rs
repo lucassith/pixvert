@@ -17,9 +17,9 @@ impl<T: ?Sized> ServiceProvider<T> where
         }
     }
 
-    pub fn get(&self, link: &String) -> Option<Arc<Box<T>>> {
+    pub fn get(&self, resource: &String) -> Option<Arc<Box<T>>> {
         for service in self.services.iter() {
-            if service.can_be_used(link) {
+            if service.can_be_used(resource) {
                 return Option::Some(service.clone());
             }
         }
