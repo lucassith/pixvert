@@ -8,6 +8,7 @@ use image::io::Reader;
 use std::io::Cursor;
 use async_trait::async_trait;
 use crate::service_provider::Service;
+use sha2::{Sha224, Digest};
 
 
 pub struct ImagePngJpgDecoder {
@@ -40,18 +41,31 @@ impl ImageDecoder for ImagePngJpgDecoder {
         } else {
             ImageFormat::Png
         };
+        let mut hasher = Sha224::new();
+        hasher.update(&fetched_object.bytes);
+        hasher.update(fetched_object.mime.clone().to_string());
+        let hash = hasher.finalize();
+        if let Ok(cached) = self.cache.lock().unwrap().get(&String::from_utf8_lossy(&*hash).to_string()) {
+            log::info!("Serving decoded image {} from cache", {origin_url});
+            return Ok(cached);
+        }
+
         let mut reader = Reader::new(Cursor::new(
             fetched_object.bytes.to_vec()
         ));
         reader.set_format(format);
 
-        let decoded_image = reader.decode().unwrap();
+        let decoded_image =
+            DecodedImage{
+                image: reader.decode().unwrap(),
+                from: fetched_object.mime,
+            };
+
+
+        self.cache.lock().unwrap().set(String::from_utf8_lossy(&*hash).to_string(), decoded_image.clone());
 
         return Result::Ok(
-            DecodedImage{
-                image: decoded_image,
-                from: fetched_object.mime,
-            }
+            decoded_image
         )
     }
 }

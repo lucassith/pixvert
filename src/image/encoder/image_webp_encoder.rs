@@ -32,15 +32,27 @@ impl Service for ImageWebpEncoder {
 #[async_trait]
 impl ImageEncoder for ImageWebpEncoder {
     async fn encode(&self, origin_url: &String, decoded_image: DecodedImage) -> Result<EncodedImage, Error> {
+        let mut hasher = Sha224::new();
+        hasher.update(&decoded_image.image.as_bytes());
+        hasher.update(&decoded_image.from.to_string());
+        let hash = hasher.finalize();
+        if let Ok(cached) = self.cache.lock().unwrap().get(&String::from_utf8_lossy(&*hash).to_string()) {
+            log::info!("Serving encoded webp image {} from cache", {origin_url});
+            return Ok(cached);
+        }
         let encoder = Encoder::from_image(
             &decoded_image.image
         );
-        let encoded_image = encoder.encode_lossless();
-        return Result::Ok(EncodedImage{
-            image: bytes::Bytes::from(encoded_image.to_vec()),
+        let encoded_image_buffer = encoder.encode(20f32);
+        let encoded_image = EncodedImage{
+            image: bytes::Bytes::from(encoded_image_buffer.to_vec()),
             from: decoded_image.from,
             output_mime: String::from("image/webp")
-        })
+        };
+
+        self.cache.lock().unwrap().set(String::from_utf8_lossy(&*hash).to_string(), encoded_image.clone());
+
+        Result::Ok(encoded_image)
     }
 }
 

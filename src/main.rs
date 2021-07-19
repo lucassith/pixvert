@@ -4,8 +4,6 @@ use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 
 use fetcher::{http_fetcher::HttpFetcher};
 
-extern crate image as image_crate;
-
 use crate::fetcher::{FetchError, FetchableService, FetchedObject};
 use crate::service_provider::ServiceProvider;
 use crate::image::encoder::ImageEncoderService;
@@ -14,6 +12,8 @@ use crate::image::decoder::image_png_jpg_decoder::ImagePngJpgDecoder;
 use crate::image::encoder::image_webp_encoder::ImageWebpEncoder;
 use crate::image::{EncodedImage, DecodedImage};
 use std::result::Result::Err;
+use crate::image::scaler::ImageScalerService;
+use crate::image::scaler::lanczos3_scaler::Lanczos3ImageScaler;
 
 
 mod image;
@@ -25,6 +25,7 @@ struct AppState {
     fetcher_provider: Mutex<ServiceProvider<dyn FetchableService + Send + Sync>>,
     decoder_provider: Mutex<ServiceProvider<dyn ImageDecoderService + Send + Sync>>,
     encoder_provider: Mutex<ServiceProvider<dyn ImageEncoderService + Send + Sync>>,
+    scaler_provider: Mutex<ServiceProvider<dyn ImageScalerService + Send + Sync>>,
 }
 
 async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
@@ -57,10 +58,11 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     let height = req.match_info().get("height").unwrap_or("no-height");
     match (width.parse::<u32>(), height.parse::<u32>()) {
         (Ok(width), Ok(height)) => {
-            decoded_object.image = decoded_object.image.resize_exact(width, height, image_crate::imageops::FilterType::Lanczos3);
+            let scaler_provider = data.scaler_provider.lock().unwrap().get(&String::from("")).unwrap();
+            decoded_object = scaler_provider.scale(found_url, &decoded_object, (width, height)).await.unwrap();
         }
         (Err(we), Err(he))=> {
-            log::error!("Failed to parse width {} and height {}. Err: {} {}", width, height, we, he);
+            log::trace!("Failed to parse width {} and height {}. Err: {} {}", width, height, we, he);
         }
         (_, Err(he))=> {
             log::error!("Failed to parse height {}. Err: {}", height, he);
@@ -104,6 +106,7 @@ async fn main() -> std::io::Result<()> {
     let fetched_object_cache: Arc<Mutex<dyn cache::Cachable<FetchedObject> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
     let encoded_image_cache: Arc<Mutex<dyn cache::Cachable<EncodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
     let decoded_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
+    let scaled_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
     let app_state = web::Data::new(AppState {
         fetcher_provider: Mutex::new(ServiceProvider::new(
             Vec::from([
@@ -124,6 +127,13 @@ async fn main() -> std::io::Result<()> {
                 Arc::new(Box::new(ImageWebpEncoder::new(
                     encoded_image_cache.clone()
                 )) as Box<dyn ImageEncoderService + Sync + Send>)
+            ])
+        )),
+        scaler_provider: Mutex::new(ServiceProvider::new(
+            Vec::from([
+                Arc::new(Box::new(Lanczos3ImageScaler::new(
+                    scaled_image_cache.clone()
+                )) as Box<dyn ImageScalerService + Sync + Send>)
             ])
         ))
     });
