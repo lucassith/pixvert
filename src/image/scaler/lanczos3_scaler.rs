@@ -1,15 +1,15 @@
 extern crate image as image_crate;
 
-use crate::image::{EncodedImage, DecodedImage};
-use crate::cache::Cachable;
-use std::sync::{Mutex, Arc};
 use std::fmt::Error;
-use webp::Encoder;
-use async_trait::async_trait;
-use crate::service_provider::Service;
-use crate::image::scaler::{ImageScaler, ImageScalerService};
-use sha2::{Sha224, Digest};
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
+
+use crate::cache::Cachable;
+use crate::image::{DecodedImage};
+use crate::image::scaler::{ImageScaler, ImageScalerService};
+use crate::IMAGE_CACHE_HASH_LITERAL;
+use crate::service_provider::Service;
 
 pub struct Lanczos3ImageScaler {
     cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>,
@@ -36,29 +36,32 @@ impl Service for Lanczos3ImageScaler {
 #[async_trait]
 impl ImageScaler for Lanczos3ImageScaler {
     async fn scale(&self, origin_url: &String, decoded_image: &DecodedImage, dimensions: (u32, u32)) -> Result<DecodedImage, Error> {
-        let mut hasher = Sha224::new();
-        hasher.update(&decoded_image.image.as_bytes());
-        hasher.update(&decoded_image.from.to_string());
-        hasher.update(format!("{}x{}", dimensions.0, dimensions.1));
-        let hash = hasher.finalize();
-        if let Ok(cached) = self.cache.lock().unwrap().get(&String::from_utf8_lossy(&*hash).to_string()) {
-            log::info!("Serving scaled image {} from cache", {origin_url});
-            return Ok(cached);
+        let image_cache_info = decoded_image.cache_info.get(
+            IMAGE_CACHE_HASH_LITERAL
+        );
+
+        if let Some(cache_string) = image_cache_info {
+            if let Ok(cached) = self.cache.lock().unwrap().get(&(String::from(cache_string) + &*dimensions.0.to_string() + &*dimensions.1.to_string())) {
+                log::info!("Serving encoded image {} from cache", {origin_url});
+                return Ok(cached);
+            }
         }
 
         let scaled_dynamic_image = decoded_image
             .image
             .clone()
-            .resize_exact(dimensions.0, dimensions.1, image_crate::imageops::FilterType::Lanczos3);
+            .resize(dimensions.0, dimensions.1, image_crate::imageops::FilterType::Lanczos3);
 
         let scaled_image =
-            DecodedImage{
+            DecodedImage {
                 image: scaled_dynamic_image,
                 from: decoded_image.from.clone(),
+                cache_info: decoded_image.cache_info.clone(),
             };
 
-
-        self.cache.lock().unwrap().set(String::from_utf8_lossy(&*hash).to_string(), scaled_image.clone());
+        if let Some(cache_value) = image_cache_info {
+            self.cache.lock().unwrap().set(cache_value.clone() + dimensions.0.to_string().as_str() + dimensions.1.to_string().as_str(), scaled_image.clone());
+        }
 
         return Result::Ok(
             scaled_image

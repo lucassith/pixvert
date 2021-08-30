@@ -1,25 +1,26 @@
 use std::{sync::{Arc, Mutex}};
+use std::result::Result::Err;
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 
 use fetcher::{http_fetcher::HttpFetcher};
 
-use crate::fetcher::{FetchError, FetchableService, FetchedObject};
-use crate::service_provider::ServiceProvider;
-use crate::image::encoder::ImageEncoderService;
-use crate::image::decoder::ImageDecoderService;
+use crate::fetcher::{FetchableService, FetchedObject, FetchError};
+use crate::image::{DecodedImage, EncodedImage};
 use crate::image::decoder::image_png_jpg_decoder::ImagePngJpgDecoder;
+use crate::image::decoder::ImageDecoderService;
 use crate::image::encoder::image_webp_encoder::ImageWebpEncoder;
-use crate::image::{EncodedImage, DecodedImage};
-use std::result::Result::Err;
+use crate::image::encoder::ImageEncoderService;
 use crate::image::scaler::ImageScalerService;
 use crate::image::scaler::lanczos3_scaler::Lanczos3ImageScaler;
-
+use crate::service_provider::ServiceProvider;
 
 mod image;
 mod fetcher;
 mod cache;
 mod service_provider;
+
+static IMAGE_CACHE_HASH_LITERAL: &str = "Image-Cache-Hash";
 
 struct AppState {
     fetcher_provider: Mutex<ServiceProvider<dyn FetchableService + Send + Sync>>,
@@ -29,15 +30,15 @@ struct AppState {
 }
 
 async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
-    let found_url = &req.match_info().get("tail").unwrap().to_string();
-    log::info!("Found url: {:#}", found_url);
+    let resource_url = &req.match_info().get("tail").unwrap().to_string();
+    log::info!("Found url: {:#}", resource_url);
 
     let fetcher_provider = data.fetcher_provider.lock().unwrap();
-    let fetcher = fetcher_provider.get(found_url);
+    let fetcher = fetcher_provider.get(resource_url);
     if fetcher.is_none() {
         return HttpResponse::Gone().finish();
     }
-    let fetched_object = fetcher.unwrap().fetch(found_url).await;
+    let fetched_object = fetcher.unwrap().fetch(resource_url).await;
     if let Err(err) = &fetched_object {
         return match err {
             FetchError::ObjectNotFound => {
@@ -53,13 +54,13 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     let decoder = decoder_provider.get(
         &String::from(fetched_object.mime.to_string())
     );
-    let mut decoded_object = decoder.unwrap().decode(found_url, fetched_object).await.unwrap();
+    let mut decoded_object = decoder.unwrap().decode(&req.path().to_string(), fetched_object).await.unwrap();
     let width = req.match_info().get("width").unwrap_or("no-width");
     let height = req.match_info().get("height").unwrap_or("no-height");
     match (width.parse::<u32>(), height.parse::<u32>()) {
         (Ok(width), Ok(height)) => {
             let scaler_provider = data.scaler_provider.lock().unwrap().get(&String::from("")).unwrap();
-            decoded_object = scaler_provider.scale(found_url, &decoded_object, (width, height)).await.unwrap();
+            decoded_object = scaler_provider.scale(&req.path().to_string(), &decoded_object, (width, height)).await.unwrap();
         }
         (Err(we), Err(he))=> {
             log::trace!("Failed to parse width {} and height {}. Err: {} {}", width, height, we, he);
@@ -91,7 +92,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
             HttpResponse::NotAcceptable().finish()
         }
         Some(encoder) => {
-            let encoded_image = encoder.encode(found_url, decoded_object).await.unwrap();
+            let encoded_image = encoder.encode(&req.path().to_string(), decoded_object).await.unwrap();
             HttpResponse::Ok()
                 .content_type(encoded_image.output_mime)
                 .body(encoded_image.image)
@@ -145,7 +146,7 @@ async fn main() -> std::io::Result<()> {
             .route("/{width}_{height}/{tail:.*}", web::get().to(index))
             .route("/{format}/{tail:.*}", web::get().to(index))
             .route("/{tail:.*}", web::get().to(index))
-    })
+        })
         .bind("127.0.0.1:8080")?
         .run()
         .await

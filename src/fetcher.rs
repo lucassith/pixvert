@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::{sync::Arc};
+use mime::Mime;
 use std::collections::HashMap;
 use crate::service_provider::Service;
 
@@ -24,10 +25,11 @@ pub struct FetcherProvider {
     fetchers: Vec<Arc<Box<dyn Fetchable + Sync + Send>>>
 }
 
+
 #[derive(Debug, Clone)]
 pub struct FetchedObject {
     pub bytes: Bytes,
-    pub mime: mime::Mime,
+    pub mime: Mime,
     pub cache_info: HashMap<String, String>,
 }
 

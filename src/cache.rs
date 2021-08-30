@@ -1,4 +1,5 @@
 pub mod memory_cache;
+pub mod file_cache;
 
 #[derive(Debug)]
 pub enum CacheError {

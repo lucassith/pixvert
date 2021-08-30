@@ -1,15 +1,16 @@
-use image::{ ImageFormat};
+use std::io::Cursor;
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use image::ImageFormat;
+use image::io::Reader;
+
+use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::cache::Cachable;
-use crate::image::decoder::{ImageDecoder, DecodeError, ImageDecoderService};
-use std::sync::{Mutex, Arc};
 use crate::fetcher::FetchedObject;
 use crate::image::DecodedImage;
-use image::io::Reader;
-use std::io::Cursor;
-use async_trait::async_trait;
+use crate::image::decoder::{DecodeError, ImageDecoder, ImageDecoderService};
 use crate::service_provider::Service;
-use sha2::{Sha224, Digest};
-
 
 pub struct ImagePngJpgDecoder {
     cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>,
@@ -17,15 +18,13 @@ pub struct ImagePngJpgDecoder {
 
 impl ImagePngJpgDecoder {
     pub fn new(cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>) -> ImagePngJpgDecoder {
-        return ImagePngJpgDecoder{
+        return ImagePngJpgDecoder {
             cache
-        }
+        };
     }
 }
 
-impl ImageDecoderService for ImagePngJpgDecoder {
-
-}
+impl ImageDecoderService for ImagePngJpgDecoder {}
 
 impl Service for ImagePngJpgDecoder {
     fn can_be_used(&self, resource: &String) -> bool {
@@ -41,14 +40,21 @@ impl ImageDecoder for ImagePngJpgDecoder {
         } else {
             ImageFormat::Png
         };
-        let mut hasher = Sha224::new();
-        hasher.update(&fetched_object.bytes);
-        hasher.update(fetched_object.mime.clone().to_string());
-        let hash = hasher.finalize();
-        if let Ok(cached) = self.cache.lock().unwrap().get(&String::from_utf8_lossy(&*hash).to_string()) {
-            log::info!("Serving decoded image {} from cache", {origin_url});
-            return Ok(cached);
+
+        let image_cache_info = fetched_object.cache_info.get(
+            IMAGE_CACHE_HASH_LITERAL
+        );
+
+        log::trace!("fetched object cache: {:#?}", fetched_object.cache_info);
+
+        if let Some(cache_string) = image_cache_info {
+            log::trace!("Object cache string: {}", cache_string);
+            if let Ok(cached) = self.cache.lock().unwrap().get(cache_string) {
+                log::info!("Serving encoded image {} from cache", {origin_url});
+                return Ok(cached);
+            }
         }
+
 
         let mut reader = Reader::new(Cursor::new(
             fetched_object.bytes.to_vec()
@@ -56,17 +62,20 @@ impl ImageDecoder for ImagePngJpgDecoder {
         reader.set_format(format);
 
         let decoded_image =
-            DecodedImage{
+            DecodedImage {
                 image: reader.decode().unwrap(),
                 from: fetched_object.mime,
+                cache_info: fetched_object.cache_info.clone(),
             };
 
 
-        self.cache.lock().unwrap().set(String::from_utf8_lossy(&*hash).to_string(), decoded_image.clone());
+        if let Some(cache_value) = image_cache_info {
+            self.cache.lock().unwrap().set(cache_value.clone(), decoded_image.clone());
+        }
 
         return Result::Ok(
             decoded_image
-        )
+        );
     }
 }
 
