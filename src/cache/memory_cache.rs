@@ -1,14 +1,14 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use super::{Cachable, CacheError};
 
 pub struct MemoryCache<T: Clone> {
-    objects: HashMap<String, T>
+    objects: HashMap<String, T>,
 }
 
 impl<T: Clone> MemoryCache<T> {
     pub fn new() -> MemoryCache<T> {
-        MemoryCache{
+        MemoryCache {
             objects: HashMap::new()
         }
     }
@@ -20,11 +20,11 @@ impl<T: Clone> Cachable<T> for MemoryCache<T> {
         return match object {
             Some(object) => {
                 Result::Ok(object.clone())
-            },
+            }
             None => {
                 Result::Err(CacheError::NoCacheEntry)
             }
-        }
+        };
     }
 
     fn set(&mut self, link: String, object: T) -> Result<bool, super::CacheError> {

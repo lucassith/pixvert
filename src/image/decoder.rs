@@ -1,6 +1,7 @@
+use async_trait::async_trait;
+
 use crate::fetcher::FetchedObject;
 use crate::image::DecodedImage;
-use async_trait::async_trait;
 use crate::service_provider::Service;
 
 pub mod image_png_jpg_decoder;
@@ -10,9 +11,7 @@ pub enum DecodeError {
     InvalidInputFormat(String, String),
 }
 
-pub trait ImageDecoderService: ImageDecoder + Service {
-
-}
+pub trait ImageDecoderService: ImageDecoder + Service {}
 
 #[async_trait]
 pub trait ImageDecoder {

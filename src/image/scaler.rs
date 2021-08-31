@@ -1,14 +1,14 @@
+use std::fmt::Error;
+
+use async_trait::async_trait;
+
+use crate::image::{DecodedImage};
+use crate::service_provider::Service;
+
 pub mod lanczos3_scaler;
 
 
-use crate::image::{DecodedImage, EncodedImage};
-use async_trait::async_trait;
-use std::fmt::Error;
-use crate::service_provider::Service;
-
-pub trait ImageScalerService: Service + ImageScaler {
-
-}
+pub trait ImageScalerService: Service + ImageScaler {}
 
 #[async_trait]
 pub trait ImageScaler {

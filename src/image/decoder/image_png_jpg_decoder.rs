@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use image::ImageFormat;
 use image::io::Reader;
 
-use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::cache::Cachable;
 use crate::fetcher::FetchedObject;
 use crate::image::DecodedImage;
 use crate::image::decoder::{DecodeError, ImageDecoder, ImageDecoderService};
+use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::service_provider::Service;
 
 pub struct ImagePngJpgDecoder {
@@ -35,7 +35,7 @@ impl Service for ImagePngJpgDecoder {
 #[async_trait]
 impl ImageDecoder for ImagePngJpgDecoder {
     async fn decode(&self, origin_url: &String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError> {
-        let format = if fetched_object.mime.eq(&mime::IMAGE_JPEG) {
+        let format = if fetched_object.mime.eq(&mime::IMAGE_JPEG.to_string()) {
             ImageFormat::Jpeg
         } else {
             ImageFormat::Png

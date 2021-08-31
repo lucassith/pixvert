@@ -18,13 +18,11 @@ impl ImageWebpEncoder {
     pub fn new(cache: Arc<Mutex<dyn Cachable<EncodedImage> + Send + Sync>>) -> ImageWebpEncoder {
         return ImageWebpEncoder {
             cache
-        }
+        };
     }
 }
 
-impl ImageEncoderService for ImageWebpEncoder {
-
-}
+impl ImageEncoderService for ImageWebpEncoder {}
 
 impl Service for ImageWebpEncoder {
     fn can_be_used(&self, resource: &String) -> bool {

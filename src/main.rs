@@ -3,7 +3,7 @@ use std::result::Result::Err;
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 
-use fetcher::{http_fetcher::HttpFetcher};
+use fetcher::http_fetcher::HttpFetcher;
 
 use crate::fetcher::{FetchableService, FetchedObject, FetchError};
 use crate::image::{DecodedImage, EncodedImage};
@@ -47,7 +47,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
             FetchError::FetchFailed(e) => {
                 HttpResponse::NotFound().body(e)
             }
-        }
+        };
     }
     let fetched_object = fetched_object.unwrap();
     let decoder_provider = data.decoder_provider.lock().unwrap();
@@ -62,13 +62,13 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
             let scaler_provider = data.scaler_provider.lock().unwrap().get(&String::from("")).unwrap();
             decoded_object = scaler_provider.scale(&req.path().to_string(), &decoded_object, (width, height)).await.unwrap();
         }
-        (Err(we), Err(he))=> {
+        (Err(we), Err(he)) => {
             log::trace!("Failed to parse width {} and height {}. Err: {} {}", width, height, we, he);
         }
-        (_, Err(he))=> {
+        (_, Err(he)) => {
             log::error!("Failed to parse height {}. Err: {}", height, he);
         }
-        (Err(we), _)=> {
+        (Err(we), _) => {
             log::error!("Failed to parse width {}. Err: {}", width, we);
         }
     }
@@ -97,7 +97,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
                 .content_type(encoded_image.output_mime)
                 .body(encoded_image.image)
         }
-    }
+    };
 }
 
 
@@ -136,7 +136,7 @@ async fn main() -> std::io::Result<()> {
                     scaled_image_cache.clone()
                 )) as Box<dyn ImageScalerService + Sync + Send>)
             ])
-        ))
+        )),
     });
 
     HttpServer::new(move || {
@@ -146,7 +146,7 @@ async fn main() -> std::io::Result<()> {
             .route("/{width}_{height}/{tail:.*}", web::get().to(index))
             .route("/{format}/{tail:.*}", web::get().to(index))
             .route("/{tail:.*}", web::get().to(index))
-        })
+    })
         .bind("127.0.0.1:8080")?
         .run()
         .await

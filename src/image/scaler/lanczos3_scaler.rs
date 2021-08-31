@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
 use crate::cache::Cachable;
-use crate::image::{DecodedImage};
+use crate::image::DecodedImage;
 use crate::image::scaler::{ImageScaler, ImageScalerService};
 use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::service_provider::Service;
@@ -19,13 +19,11 @@ impl Lanczos3ImageScaler {
     pub fn new(cache: Arc<Mutex<dyn Cachable<DecodedImage> + Send + Sync>>) -> Lanczos3ImageScaler {
         return Lanczos3ImageScaler {
             cache
-        }
+        };
     }
 }
 
-impl ImageScalerService for Lanczos3ImageScaler {
-
-}
+impl ImageScalerService for Lanczos3ImageScaler {}
 
 impl Service for Lanczos3ImageScaler {
     fn can_be_used(&self, _: &String) -> bool {
@@ -60,12 +58,12 @@ impl ImageScaler for Lanczos3ImageScaler {
             };
 
         if let Some(cache_value) = image_cache_info {
-            self.cache.lock().unwrap().set(cache_value.clone() + dimensions.0.to_string().as_str() + dimensions.1.to_string().as_str(), scaled_image.clone());
+            self.cache.lock().unwrap().set(cache_value.clone() + dimensions.0.to_string().as_str() + dimensions.1.to_string().as_str(), scaled_image.clone()).unwrap_or_default();
         }
 
         return Result::Ok(
             scaled_image
-        )
+        );
     }
 }
 

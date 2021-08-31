@@ -1,8 +1,10 @@
+use std::sync::Arc;
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use bytes::Bytes;
-use std::{sync::Arc};
-use mime::Mime;
-use std::collections::HashMap;
+
+
 use crate::service_provider::Service;
 
 pub mod http_fetcher;
@@ -13,8 +15,7 @@ pub enum FetchError {
     FetchFailed(String),
 }
 
-pub trait FetchableService: Fetchable + Service {
-}
+pub trait FetchableService: Fetchable + Service {}
 
 #[async_trait]
 pub trait Fetchable {
@@ -22,22 +23,22 @@ pub trait Fetchable {
 }
 
 pub struct FetcherProvider {
-    fetchers: Vec<Arc<Box<dyn Fetchable + Sync + Send>>>
+    fetchers: Vec<Arc<Box<dyn Fetchable + Sync + Send>>>,
 }
 
 
 #[derive(Debug, Clone)]
 pub struct FetchedObject {
     pub bytes: Bytes,
-    pub mime: Mime,
+    pub mime: String,
     pub cache_info: HashMap<String, String>,
 }
 
 impl Default for FetchedObject {
     fn default() -> Self {
-        FetchedObject{
+        FetchedObject {
             bytes: Bytes::default(),
-            mime: mime::APPLICATION_OCTET_STREAM,
+            mime: mime::APPLICATION_OCTET_STREAM.to_string(),
             cache_info: HashMap::new(),
         }
     }

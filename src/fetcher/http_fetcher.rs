@@ -9,22 +9,20 @@ use rand::distributions::Alphanumeric;
 use reqwest::Url;
 use urlencoding::decode;
 
-use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::cache::{Cachable, CacheError};
 use crate::fetcher::{FetchableService, FetchedObject, FetchError};
+use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::service_provider::Service;
 
 use super::Fetchable;
 
 pub struct HttpFetcher {
-    reqwest: reqwest::Client,
     cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>,
 }
 
 impl HttpFetcher {
     pub fn new(cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>) -> HttpFetcher {
         HttpFetcher {
-            reqwest: reqwest::Client::new(),
             cache,
         }
     }
@@ -82,9 +80,8 @@ impl Fetchable for HttpFetcher {
 
         let response: reqwest::Response = match &cached_object {
             Ok(cached_object) => {
-                return Result::Ok(cached_object.clone());
                 log::trace!("Found cached object: {} - mime: {}, cache_info: {:#?}.", hash, cached_object.mime, cached_object.cache_info);
-                self.fetch_with_meta(link, &cached_object.cache_info).await?
+                return Result::Ok(cached_object.clone());
             }
             Err(_) => {
                 log::trace!("Object {} not found in cache.", hash);
@@ -131,7 +128,7 @@ impl Fetchable for HttpFetcher {
                 fetched_object.mime = content_type.to_str().unwrap().parse().unwrap();
             }
             None => {
-                fetched_object.mime = mime::APPLICATION_OCTET_STREAM;
+                fetched_object.mime = mime::APPLICATION_OCTET_STREAM.to_string();
             }
         }
         fetched_object.bytes = response.bytes().await?;
@@ -218,8 +215,8 @@ mod tests {
         let image = fetcher.fetch(&url).await.unwrap();
 
         assert_eq!(image.bytes, bytes::Bytes::from("jpg"));
-        assert_eq!(image.mime, mime::IMAGE_JPEG);
-        assert_eq!(image.cache_info.len(), 0);
+        assert_eq!(image.mime, mime::IMAGE_JPEG.to_string());
+        assert_eq!(image.cache_info.len(), 1);
         assert_eq!(hashmap.clone().lock().unwrap().len(), 1);
         assert_eq!(
             hashmap.clone().lock().as_deref().unwrap().into_iter().nth(0).unwrap().0,

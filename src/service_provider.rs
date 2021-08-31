@@ -6,13 +6,13 @@ pub trait Service {
 
 pub struct ServiceProvider<T: ?Sized> where
     T: Service + Sync + Send {
-    services: Vec<Arc<Box<T>>>
+    services: Vec<Arc<Box<T>>>,
 }
 
 impl<T: ?Sized> ServiceProvider<T> where
     T: Service + Sync + Send {
     pub fn new(services: Vec<Arc<Box<T>>>) -> ServiceProvider<T> {
-        ServiceProvider{
+        ServiceProvider {
             services
         }
     }
