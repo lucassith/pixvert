@@ -104,10 +104,10 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     log4rs::init_file("logger-config.yml", Default::default()).unwrap();
-    let fetched_object_cache: Arc<Mutex<dyn cache::Cachable<FetchedObject> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
-    let encoded_image_cache: Arc<Mutex<dyn cache::Cachable<EncodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
-    let decoded_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
-    let scaled_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::memory_cache::MemoryCache::new()));
+    let fetched_object_cache: Arc<Mutex<dyn cache::Cachable<FetchedObject> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/fetched_object"))));
+    let encoded_image_cache: Arc<Mutex<dyn cache::Cachable<EncodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/encoded_image"))));
+    let decoded_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/decoded_image"))));
+    let scaled_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/scaled_image"))));
     let app_state = web::Data::new(AppState {
         fetcher_provider: Mutex::new(ServiceProvider::new(
             Vec::from([
@@ -149,5 +149,7 @@ async fn main() -> std::io::Result<()> {
     })
         .bind("127.0.0.1:8080")?
         .run()
-        .await
+        .await;
+    std::fs::remove_dir_all("/tmp/pixvert_image_cache").unwrap();
+    Result::Ok(())
 }

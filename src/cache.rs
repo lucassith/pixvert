@@ -1,9 +1,18 @@
+use std::num::ParseIntError;
+
 pub mod memory_cache;
 pub mod file_cache;
 
 #[derive(Debug)]
 pub enum CacheError {
     NoCacheEntry,
+    InvalidCacheEntry,
+}
+
+impl From<ParseIntError> for CacheError {
+    fn from(_: ParseIntError) -> Self {
+        Self::InvalidCacheEntry
+    }
 }
 
 pub trait Cachable<T: Clone> {
