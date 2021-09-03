@@ -236,7 +236,7 @@ impl Cachable<EncodedImage> for FileCache {
     fn set(&mut self, key: String, obj: EncodedImage) -> Result<bool, super::CacheError> {
         let file_path = self.catalog.join(FileCache::generate_file_name(&key));
         debug!("Trying to create/open {:#?}", file_path);
-        let file = OpenOptions::new().create(true).create_new(true).write(true).read(true).open(
+        let file = OpenOptions::new().create(true).write(true).read(true).open(
             file_path
         ).unwrap();
         let mut file = LineWriter::new(file);

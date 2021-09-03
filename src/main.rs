@@ -14,6 +14,7 @@ use crate::image::encoder::ImageEncoderService;
 use crate::image::scaler::ImageScalerService;
 use crate::image::scaler::lanczos3_scaler::Lanczos3ImageScaler;
 use crate::service_provider::ServiceProvider;
+use crate::image::encoder::image_png_jpg_encoder::{ImagePngJpgEncoder, ImagePngJpgEncoderType};
 
 mod image;
 mod fetcher;
@@ -79,6 +80,8 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
         Some(format) => {
             match format {
                 "webp" => String::from("image/webp"),
+                "jpg" => mime::IMAGE_JPEG.to_string(),
+                "png" => mime::IMAGE_PNG.to_string(),
                 _ => String::from("unknown")
             }
         }
@@ -127,6 +130,14 @@ async fn main() -> std::io::Result<()> {
             Vec::from([
                 Arc::new(Box::new(ImageWebpEncoder::new(
                     encoded_image_cache.clone()
+                )) as Box<dyn ImageEncoderService + Sync + Send>),
+                Arc::new(Box::new(ImagePngJpgEncoder::new(
+                    encoded_image_cache.clone(),
+                    ImagePngJpgEncoderType::JPG
+                )) as Box<dyn ImageEncoderService + Sync + Send>),
+                Arc::new(Box::new(ImagePngJpgEncoder::new(
+                    encoded_image_cache.clone(),
+                    ImagePngJpgEncoderType::PNG
                 )) as Box<dyn ImageEncoderService + Sync + Send>)
             ])
         )),
@@ -150,6 +161,6 @@ async fn main() -> std::io::Result<()> {
         .bind("127.0.0.1:8080")?
         .run()
         .await;
-    std::fs::remove_dir_all("/tmp/pixvert_image_cache").unwrap();
+    std::fs::remove_dir_all("/tmp/pixvert_image_cache").unwrap_or_default();
     Result::Ok(())
 }

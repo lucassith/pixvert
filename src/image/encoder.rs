@@ -6,6 +6,7 @@ use crate::image::{DecodedImage, EncodedImage};
 use crate::service_provider::Service;
 
 pub mod image_webp_encoder;
+pub mod image_png_jpg_encoder;
 
 pub trait ImageEncoderService: Service + ImageEncoder {}
 

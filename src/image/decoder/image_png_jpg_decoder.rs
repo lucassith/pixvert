@@ -28,7 +28,7 @@ impl ImageDecoderService for ImagePngJpgDecoder {}
 
 impl Service for ImagePngJpgDecoder {
     fn can_be_used(&self, resource: &String) -> bool {
-        return resource.eq(&mime::IMAGE_JPEG.to_string()) || resource.eq(&mime::IMAGE_PNG.to_string());
+        resource.eq(&mime::IMAGE_JPEG.to_string()) || resource.eq(&mime::IMAGE_PNG.to_string())
     }
 }
 
