@@ -1,6 +1,8 @@
 use std::{sync::{Arc, Mutex}};
 use std::result::Result::Err;
 
+use log::debug;
+
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 
 use fetcher::http_fetcher::HttpFetcher;
@@ -15,6 +17,7 @@ use crate::image::scaler::ImageScalerService;
 use crate::image::scaler::lanczos3_scaler::Lanczos3ImageScaler;
 use crate::service_provider::ServiceProvider;
 use crate::image::encoder::image_png_jpg_encoder::{ImagePngJpgEncoder, ImagePngJpgEncoderType};
+use serde::Deserialize;
 
 mod image;
 mod fetcher;
@@ -30,8 +33,18 @@ struct AppState {
     scaler_provider: Mutex<ServiceProvider<dyn ImageScalerService + Send + Sync>>,
 }
 
-async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+#[derive(Debug, Deserialize)]
+pub struct ImageConversionRequest {
+    quality: Option<f32>,
+}
+
+async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<ImageConversionRequest>) -> HttpResponse {
     let resource_url = &req.match_info().get("tail").unwrap().to_string();
+    let quality = info.quality.unwrap_or(95f32);
+    if quality <= 0f32 || quality > 100f32 {
+        return HttpResponse::BadRequest().body("quality must be between 0 and 100");
+    }
+    debug!("Received quality {}", quality);
     log::info!("Found url: {:#}", resource_url);
 
     let fetcher_provider = data.fetcher_provider.lock().unwrap();
@@ -58,6 +71,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     let mut decoded_object = decoder.unwrap().decode(&req.path().to_string(), fetched_object).await.unwrap();
     let width = req.match_info().get("width").unwrap_or("no-width");
     let height = req.match_info().get("height").unwrap_or("no-height");
+
     match (width.parse::<u32>(), height.parse::<u32>()) {
         (Ok(width), Ok(height)) => {
             let scaler_provider = data.scaler_provider.lock().unwrap().get(&String::from("")).unwrap();
@@ -78,7 +92,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
             decoded_object.from.to_string()
         }
         Some(format) => {
-            match format {
+            match format.to_lowercase().as_str() {
                 "webp" => String::from("image/webp"),
                 "jpg" => mime::IMAGE_JPEG.to_string(),
                 "png" => mime::IMAGE_PNG.to_string(),
@@ -95,7 +109,11 @@ async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
             HttpResponse::NotAcceptable().finish()
         }
         Some(encoder) => {
-            let encoded_image = encoder.encode(&req.path().to_string(), decoded_object).await.unwrap();
+            let encoded_image = encoder.encode(
+                &req.path().to_string(),
+                decoded_object,
+                quality
+            ).await.unwrap();
             HttpResponse::Ok()
                 .content_type(encoded_image.output_mime)
                 .body(encoded_image.image)

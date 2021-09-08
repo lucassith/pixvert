@@ -66,7 +66,7 @@ impl Service for ImagePngJpgEncoder {
 
 #[async_trait]
 impl ImageEncoder for ImagePngJpgEncoder {
-    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage) -> Result<EncodedImage, Error> {
+    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage, quality: f32) -> Result<EncodedImage, Error> {
         let image_cache_info = decoded_image.cache_info.get(
             IMAGE_CACHE_HASH_LITERAL
         );
@@ -84,7 +84,7 @@ impl ImageEncoder for ImagePngJpgEncoder {
         match self.output_format {
             ImagePngJpgEncoderType::JPG => {
                 decoded_image.image.write_to(
-                    &mut bytes, ImageOutputFormat::Jpeg(95),
+                    &mut bytes, ImageOutputFormat::Jpeg(quality as u8),
                 ).unwrap();
             }
             ImagePngJpgEncoderType::PNG => {

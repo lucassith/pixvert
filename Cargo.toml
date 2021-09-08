@@ -21,6 +21,7 @@ urlencoding = "2.1.0"
 md5 = "0.7.0"
 rand = "0.8.4"
 tempdir = "0.3.7"
+serde = "1.0.130"
 
 [dev-dependencies]
 httpmock = "0.5.8"

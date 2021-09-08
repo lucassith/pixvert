@@ -12,5 +12,5 @@ pub trait ImageEncoderService: Service + ImageEncoder {}
 
 #[async_trait]
 pub trait ImageEncoder {
-    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage) -> Result<EncodedImage, Error>;
+    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage, quality: f32) -> Result<EncodedImage, Error>;
 }

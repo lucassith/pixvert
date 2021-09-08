@@ -32,7 +32,7 @@ impl Service for ImageWebpEncoder {
 
 #[async_trait]
 impl ImageEncoder for ImageWebpEncoder {
-    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage) -> Result<EncodedImage, Error> {
+    async fn encode(&self, origin_url: &String, decoded_image: DecodedImage, quality: f32) -> Result<EncodedImage, Error> {
         let image_cache_info = decoded_image.cache_info.get(
             IMAGE_CACHE_HASH_LITERAL
         );
@@ -50,7 +50,7 @@ impl ImageEncoder for ImageWebpEncoder {
         let encoder = Encoder::from_image(
             &decoded_image.image
         );
-        let encoded_image_buffer = encoder.encode(20f32);
+        let encoded_image_buffer = encoder.encode(quality);
         let encoded_image = EncodedImage {
             image: bytes::Bytes::from(encoded_image_buffer.to_vec()),
             from: decoded_image.from,
