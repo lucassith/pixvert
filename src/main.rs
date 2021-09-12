@@ -1,9 +1,9 @@
 use std::{sync::{Arc, Mutex}};
 use std::result::Result::Err;
 
-use log::debug;
+use log::{debug, error};
 
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web, Responder};
 
 use fetcher::http_fetcher::HttpFetcher;
 
@@ -19,12 +19,19 @@ use crate::service_provider::ServiceProvider;
 use crate::image::encoder::image_png_jpg_encoder::{ImagePngJpgEncoder, ImagePngJpgEncoderType};
 use serde::Deserialize;
 use crate::http_cache::request_cache_handler::RequestCacheHandler;
+use crate::config::Config;
+use figment::Figment;
+use figment::providers::{Yaml, Format};
+use std::string::ParseError;
+use std::fs::OpenOptions;
+use std::io::{Write, LineWriter};
 
 mod image;
 mod fetcher;
 mod cache;
 mod service_provider;
 mod http_cache;
+mod config;
 
 static IMAGE_CACHE_HASH_LITERAL: &str = "Image-Cache-Hash";
 
@@ -33,6 +40,7 @@ struct AppState {
     decoder_provider: Mutex<ServiceProvider<dyn ImageDecoderService + Send + Sync>>,
     encoder_provider: Mutex<ServiceProvider<dyn ImageEncoderService + Send + Sync>>,
     scaler_provider: Mutex<ServiceProvider<dyn ImageScalerService + Send + Sync>>,
+    config: Mutex<Config>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +78,7 @@ async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<Ima
     let decoder = decoder_provider.get(
         &String::from(fetched_object.mime.to_string())
     );
-    let mut decoded_object = decoder.unwrap().decode(&req.path().to_string(), fetched_object).await.unwrap();
+    let mut decoded_object = decoder.unwrap().decode(&req.path().to_string(), &fetched_object).await.unwrap();
     let width = req.match_info().get("width").unwrap_or("no-width");
     let height = req.match_info().get("height").unwrap_or("no-height");
 
@@ -116,9 +124,12 @@ async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<Ima
                 decoded_object,
                 quality
             ).await.unwrap();
-            HttpResponse::Ok()
-                .content_type(encoded_image.output_mime)
-                .body(encoded_image.image)
+            let mut resp = HttpResponse::Ok();
+            resp.content_type(encoded_image.output_mime);
+            if let Some(cache_header) = fetched_object.cache_info.get(&actix_web::http::header::CACHE_CONTROL.to_string()) {
+                resp.append_header((actix_web::http::header::CACHE_CONTROL.to_string(), cache_header.clone()));
+            }
+            return resp.body(encoded_image.image)
         }
     };
 }
@@ -131,6 +142,21 @@ async fn main() -> std::io::Result<()> {
     let encoded_image_cache: Arc<Mutex<dyn cache::Cachable<EncodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/encoded_image"))));
     let decoded_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/decoded_image"))));
     let scaled_image_cache: Arc<Mutex<dyn cache::Cachable<DecodedImage> + Send + Sync>> = Arc::new(Mutex::new(cache::file_cache::FileCache::new(&String::from("/tmp/pixvert_image_cache/scaled_image"))));
+    let config: Result<Config, figment::error::Error> = Figment::new()
+        .merge(Yaml::file("app.yml"))
+        .extract();
+    if let Err(err) = config {
+        error!("{:#?}", err);
+        let file = OpenOptions::new().create(true).write(true).read(true).open(
+            "app.yml"
+        ).unwrap();
+        let mut file = LineWriter::new(file);
+        file.write_all(
+            &*serde_yaml::to_vec(&Config::default()).unwrap()
+        ).unwrap();
+        error!("Config 'app.yml' not found. Created new default config file.");
+        return Result::Ok(());
+    }
     let app_state = web::Data::new(AppState {
         fetcher_provider: Mutex::new(ServiceProvider::new(
             Vec::from([
@@ -169,6 +195,7 @@ async fn main() -> std::io::Result<()> {
                 )) as Box<dyn ImageScalerService + Sync + Send>)
             ])
         )),
+        config: Mutex::new(config.unwrap())
     });
 
     HttpServer::new(move || {

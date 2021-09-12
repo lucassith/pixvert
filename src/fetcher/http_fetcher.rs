@@ -18,7 +18,6 @@ use crate::service_provider::Service;
 
 use super::Fetchable;
 use crate::http_cache::{HttpCacheHandler, RequestCacheResult};
-use actix_web::cookie::Expiration::DateTime;
 use chrono::{DateTime, Local};
 
 pub struct HttpFetcher {
@@ -83,7 +82,6 @@ impl Fetchable for HttpFetcher {
         let link = &HttpFetcher::decode_url(link);
         let cached_object: Result<FetchedObject, CacheError>;
         let now = chrono::offset::Local::now();
-        let mut resource_fetched = false;
         let hash = &HttpFetcher::construct_hash(link);
         {
             log::info!("Looking for hash {:#}", hash);
@@ -104,30 +102,25 @@ impl Fetchable for HttpFetcher {
                             .get(FETCHED_TIME_CACHE_MAP_NAME)
                             .unwrap_or(&String::from("0"))
                             .parse()
-                            .unwrap_or_default();
+                            .unwrap();
                         let fetched_duration = now - fetched_time;
-                        if fetched_duration < duration {
-                            log::trace!("Response cache indicated max-age, but it wasnt expired. Max-Age :{}, Now: {}, Then: {}",
+                        if fetched_duration < chrono::Duration::from_std(duration).unwrap() {
+                            log::trace!("Response cache indicated max-age, but it hasn't expired. Max-Age :{}, Now: {}, Then: {}",
                                 duration.as_secs(),
                                 now.to_rfc3339(),
                                 fetched_time.to_rfc3339()
                             );
                             return Result::Ok(cached_object.clone());
                         } else {
-                            log::trace!("Response cache indicated max-age and it expired. Max-Age :{}, Now: {}, Then: {}",
+                            log::trace!("Response cache indicated max-age and it has expired. Max-Age :{}, Now: {}, Then: {}",
                                 duration.as_secs(),
                                 now.to_rfc3339(),
                                 fetched_time.to_rfc3339()
                             );
-                            resource_fetched = true;
                             self.fetch_with_meta(link, &HashMap::new()).await?
                         }
                     }
-                    RequestCacheResult::CheckBeforeServeCache => {
-                        resource_fetched = true;
-                        self.fetch_with_meta(link, &cached_object.cache_info).await?
-                    }
-                    RequestCacheResult::NoCache => {
+                    RequestCacheResult::CheckBeforeServeCache | RequestCacheResult::NoCache => {
                         self.fetch_with_meta(link, &cached_object.cache_info).await?
                     }
                 }
@@ -154,7 +147,7 @@ impl Fetchable for HttpFetcher {
             ));
         }
         let mut fetched_object = FetchedObject::default();
-        for header in vec![header::ETAG, header::LAST_MODIFIED] {
+        for header in vec![header::ETAG, header::LAST_MODIFIED, header::CACHE_CONTROL] {
             match response.headers().get(&header) {
                 Some(header_value) => {
                     log::info!("Cache info. Object: {}, Header: {}, Value: {:#?}", hash, header, header_value);

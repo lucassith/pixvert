@@ -24,6 +24,9 @@ md5 = "0.7.0"
 rand = "0.8.4"
 tempdir = "0.3.7"
 serde = "1.0.130"
+serde_yaml = "0.8.21"
+figment = { version = "0.10", features = ["yaml", "env"] }
+regex = "1.5.4"
 
 [dev-dependencies]
 httpmock = "0.5.8"

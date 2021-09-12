@@ -9,7 +9,7 @@ use crate::service_provider::Service;
 
 pub mod http_fetcher;
 
-static FETCHED_TIME_CACHE_MAP_NAME: &str = "FETCHED_TIME_CACHE_MAP_NAME";
+static FETCHED_TIME_CACHE_MAP_NAME: &str = "Fetched-At";
 
 #[derive(Debug)]
 pub enum FetchError {

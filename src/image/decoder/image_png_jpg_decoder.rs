@@ -34,7 +34,7 @@ impl Service for ImagePngJpgDecoder {
 
 #[async_trait]
 impl ImageDecoder for ImagePngJpgDecoder {
-    async fn decode(&self, origin_url: &String, fetched_object: FetchedObject) -> Result<DecodedImage, DecodeError> {
+    async fn decode(&self, origin_url: &String, fetched_object: &FetchedObject) -> Result<DecodedImage, DecodeError> {
         let format = if fetched_object.mime.eq(&mime::IMAGE_JPEG.to_string()) {
             ImageFormat::Jpeg
         } else {
@@ -64,7 +64,7 @@ impl ImageDecoder for ImagePngJpgDecoder {
         let decoded_image =
             DecodedImage {
                 image: reader.decode().unwrap(),
-                from: fetched_object.mime,
+                from: fetched_object.mime.clone(),
                 cache_info: fetched_object.cache_info.clone(),
             };
 
