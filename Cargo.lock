@@ -566,6 +566,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "631ae5198c9be5e753e5cc215e1bd73c2b466a3565173db433f52bb9d3e66dba"
 
 [[package]]
+name = "cache_control"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f5ca760c9c1a74c5372f95cfed2a264d86d1e25b0347e63a4e5e6f8c72f82a9"
+dependencies = [
+ "time 0.1.43",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1814,6 +1823,8 @@ dependencies = [
  "actix-web",
  "async-trait",
  "bytes",
+ "cache_control",
+ "chrono",
  "httpmock",
  "image",
  "log",

@@ -9,6 +9,8 @@ use crate::service_provider::Service;
 
 pub mod http_fetcher;
 
+static FETCHED_TIME_CACHE_MAP_NAME: &str = "FETCHED_TIME_CACHE_MAP_NAME";
+
 #[derive(Debug)]
 pub enum FetchError {
     ObjectNotFound,

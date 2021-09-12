@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time;
 
 use actix_web::http::header;
 use async_trait::async_trait;
@@ -8,22 +9,31 @@ use rand::{Rng, thread_rng};
 use rand::distributions::Alphanumeric;
 use reqwest::Url;
 use urlencoding::decode;
+use chrono;
 
 use crate::cache::{Cachable, CacheError};
-use crate::fetcher::{FetchableService, FetchedObject, FetchError};
+use crate::fetcher::{FetchableService, FetchedObject, FetchError, FETCHED_TIME_CACHE_MAP_NAME};
 use crate::IMAGE_CACHE_HASH_LITERAL;
 use crate::service_provider::Service;
 
 use super::Fetchable;
+use crate::http_cache::{HttpCacheHandler, RequestCacheResult};
+use actix_web::cookie::Expiration::DateTime;
+use chrono::{DateTime, Local};
 
 pub struct HttpFetcher {
     cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>,
+    request_cache_handler: Box<dyn HttpCacheHandler + Send + Sync>
 }
 
 impl HttpFetcher {
-    pub fn new(cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>) -> HttpFetcher {
+    pub fn new(
+        cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>,
+        request_cache_handler: Box<dyn HttpCacheHandler + Send + Sync>
+    ) -> HttpFetcher {
         HttpFetcher {
             cache,
+            request_cache_handler
         }
     }
 
@@ -72,6 +82,8 @@ impl Fetchable for HttpFetcher {
     async fn fetch(&self, link: &String) -> Result<FetchedObject, FetchError> {
         let link = &HttpFetcher::decode_url(link);
         let cached_object: Result<FetchedObject, CacheError>;
+        let now = chrono::offset::Local::now();
+        let mut resource_fetched = false;
         let hash = &HttpFetcher::construct_hash(link);
         {
             log::info!("Looking for hash {:#}", hash);
@@ -80,8 +92,46 @@ impl Fetchable for HttpFetcher {
 
         let response: reqwest::Response = match &cached_object {
             Ok(cached_object) => {
-                log::trace!("Found cached object: {} - mime: {}, cache_info: {:#?}.", hash, cached_object.mime, cached_object.cache_info);
-                return Result::Ok(cached_object.clone());
+                let cache_control = self.request_cache_handler.should_serve_cache(cached_object);
+                match cache_control {
+                    RequestCacheResult::ServeCache => {
+                        log::trace!("Found cached object: {} - mime: {}, cache_info: {:#?}.", hash, cached_object.mime, cached_object.cache_info);
+                        return Result::Ok(cached_object.clone());
+                    },
+                    RequestCacheResult::IfNotExpired(duration) => {
+                        let fetched_time: DateTime<Local> = cached_object
+                            .cache_info
+                            .get(FETCHED_TIME_CACHE_MAP_NAME)
+                            .unwrap_or(&String::from("0"))
+                            .parse()
+                            .unwrap_or_default();
+                        let fetched_duration = now - fetched_time;
+                        if fetched_duration < duration {
+                            log::trace!("Response cache indicated max-age, but it wasnt expired. Max-Age :{}, Now: {}, Then: {}",
+                                duration.as_secs(),
+                                now.to_rfc3339(),
+                                fetched_time.to_rfc3339()
+                            );
+                            return Result::Ok(cached_object.clone());
+                        } else {
+                            log::trace!("Response cache indicated max-age and it expired. Max-Age :{}, Now: {}, Then: {}",
+                                duration.as_secs(),
+                                now.to_rfc3339(),
+                                fetched_time.to_rfc3339()
+                            );
+                            resource_fetched = true;
+                            self.fetch_with_meta(link, &HashMap::new()).await?
+                        }
+                    }
+                    RequestCacheResult::CheckBeforeServeCache => {
+                        resource_fetched = true;
+                        self.fetch_with_meta(link, &cached_object.cache_info).await?
+                    }
+                    RequestCacheResult::NoCache => {
+                        self.fetch_with_meta(link, &cached_object.cache_info).await?
+                    }
+                }
+
             }
             Err(_) => {
                 log::trace!("Object {} not found in cache.", hash);
@@ -131,6 +181,10 @@ impl Fetchable for HttpFetcher {
                 fetched_object.mime = mime::APPLICATION_OCTET_STREAM.to_string();
             }
         }
+        fetched_object.cache_info.insert(
+            FETCHED_TIME_CACHE_MAP_NAME.to_string(),
+            now.to_rfc3339()
+        );
         fetched_object.bytes = response.bytes().await?;
         {
             self.cache.lock().as_mut().unwrap().set(
@@ -154,6 +208,7 @@ mod tests {
     use crate::fetcher::{Fetchable, FetchedObject};
 
     use super::*;
+    use crate::http_cache::request_cache_handler::RequestCacheHandler;
 
     struct CachableMock {
         pub hashmap: Arc<Mutex<HashMap<String, FetchedObject>>>,
@@ -208,6 +263,7 @@ mod tests {
         ));
         let fetcher = HttpFetcher::new(
             cache.clone(),
+            Box::new(RequestCacheHandler{})
         );
 
         assert_eq!(hashmap.clone().lock().unwrap().len(), 0);
@@ -245,6 +301,7 @@ mod tests {
         ));
         let fetcher = HttpFetcher::new(
             cache.clone(),
+            Box::new(RequestCacheHandler{})
         );
         let image = fetcher.fetch(&url).await.unwrap();
 
@@ -272,6 +329,7 @@ mod tests {
         ));
         let fetcher = HttpFetcher::new(
             cache.clone(),
+            Box::new(RequestCacheHandler{})
         );
         let image = fetcher.fetch(&url).await.unwrap();
 

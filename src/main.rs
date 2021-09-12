@@ -18,11 +18,13 @@ use crate::image::scaler::lanczos3_scaler::Lanczos3ImageScaler;
 use crate::service_provider::ServiceProvider;
 use crate::image::encoder::image_png_jpg_encoder::{ImagePngJpgEncoder, ImagePngJpgEncoderType};
 use serde::Deserialize;
+use crate::http_cache::request_cache_handler::RequestCacheHandler;
 
 mod image;
 mod fetcher;
 mod cache;
 mod service_provider;
+mod http_cache;
 
 static IMAGE_CACHE_HASH_LITERAL: &str = "Image-Cache-Hash";
 
@@ -133,7 +135,8 @@ async fn main() -> std::io::Result<()> {
         fetcher_provider: Mutex::new(ServiceProvider::new(
             Vec::from([
                 Arc::new(Box::new(HttpFetcher::new(
-                    fetched_object_cache.clone()
+                    fetched_object_cache.clone(),
+                    Box::new(RequestCacheHandler{}),
                 )) as Box<dyn FetchableService + Sync + Send>)
             ])
         )),
