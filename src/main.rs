@@ -25,6 +25,8 @@ use figment::providers::{Yaml, Format};
 use std::string::ParseError;
 use std::fs::OpenOptions;
 use std::io::{Write, LineWriter};
+use actix_web::http::Uri;
+use actix_web::http::uri::InvalidUri;
 
 mod image;
 mod fetcher;
@@ -57,6 +59,33 @@ async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<Ima
     debug!("Received quality {}", quality);
     log::info!("Found url: {:#}", resource_url);
 
+    let resource_uri = match urlencoding::decode(resource_url).unwrap().parse::<Uri>() {
+        Ok(uri) => {
+            if let Some(host) = uri.host() {
+                let found_allowed_domain = (&data.config.lock().unwrap().allow_from)
+                    .clone()
+                    .into_iter()
+                    .find(|v| -> bool {
+                        if let Some(uri_host) = &uri.host() {
+                            return uri_host.ends_with(v);
+                        }
+                        return false;
+                });
+                if found_allowed_domain.is_some() {
+                    uri
+                } else {
+                    return HttpResponse::Forbidden().body("Provided resource url Host is not set as allowed domain.");
+                }
+            } else {
+                return HttpResponse::BadRequest().body("Resource URI doesn't include host.");
+            }
+        },
+        Err(e) => {
+            error!("Invalid resource URI. {:#?}", e);
+            return HttpResponse::BadRequest().body(format!("Failed to parse resource URI: {}", e));
+        }
+    };
+
     let fetcher_provider = data.fetcher_provider.lock().unwrap();
     let fetcher = fetcher_provider.get(resource_url);
     if fetcher.is_none() {
@@ -73,11 +102,14 @@ async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<Ima
             }
         };
     }
+    drop(fetcher_provider);
+
     let fetched_object = fetched_object.unwrap();
     let decoder_provider = data.decoder_provider.lock().unwrap();
     let decoder = decoder_provider.get(
         &String::from(fetched_object.mime.to_string())
     );
+    drop(decoder_provider);
     let mut decoded_object = decoder.unwrap().decode(&req.path().to_string(), &fetched_object).await.unwrap();
     let width = req.match_info().get("width").unwrap_or("no-width");
     let height = req.match_info().get("height").unwrap_or("no-height");
@@ -126,12 +158,37 @@ async fn index(req: HttpRequest, data: web::Data<AppState>, info: web::Query<Ima
             ).await.unwrap();
             let mut resp = HttpResponse::Ok();
             resp.content_type(encoded_image.output_mime);
-            if let Some(cache_header) = fetched_object.cache_info.get(&actix_web::http::header::CACHE_CONTROL.to_string()) {
+            if let Some(overridden_cache) = (&data.config.lock().unwrap().overridden_cache).into_iter().find(|v| -> bool {
+                if let Some(resource_host) = resource_uri.host() {
+                    return resource_host.ends_with(&v.domain);
+                }
+                return false;
+            }) {
+                resp.append_header((actix_web::http::header::CACHE_CONTROL.to_string(), overridden_cache.cache_control.clone()));
+            }
+            else if let Some(cache_header) = fetched_object.cache_info.get(&actix_web::http::header::CACHE_CONTROL.to_string()) {
                 resp.append_header((actix_web::http::header::CACHE_CONTROL.to_string(), cache_header.clone()));
             }
             return resp.body(encoded_image.image)
         }
     };
+}
+async fn health(data: web::Data<AppState>) -> HttpResponse {
+    let services: Vec<bool> = vec!(
+        data.config.is_poisoned(),
+        data.decoder_provider.is_poisoned(),
+        data.fetcher_provider.is_poisoned(),
+        data.scaler_provider.is_poisoned(),
+        data.encoder_provider.is_poisoned()
+    );
+    if services.into_iter().find(|&v| -> bool { v }).is_some() {
+        return HttpResponse::ServiceUnavailable()
+            .append_header((actix_web::http::header::CACHE_CONTROL.as_str(), "no-store"))
+            .finish();
+    }
+    return HttpResponse::Ok()
+        .append_header((actix_web::http::header::CACHE_CONTROL.as_str(), "no-store"))
+        .finish();
 }
 
 
@@ -201,12 +258,13 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
+            .route("/_health", web::get().to(health))
             .route("/{width}_{height}/{format}/{tail:.*}", web::get().to(index))
             .route("/{width}_{height}/{tail:.*}", web::get().to(index))
             .route("/{format}/{tail:.*}", web::get().to(index))
             .route("/{tail:.*}", web::get().to(index))
     })
-        .bind("127.0.0.1:8080")?
+        .bind("0.0.0.0:8080")?
         .run()
         .await;
     std::fs::remove_dir_all("/tmp/pixvert_image_cache").unwrap_or_default();

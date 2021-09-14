@@ -1,16 +1,17 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Debug, Deserialize, PartialEq)]
+#[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct OverriddenCache {
-    domain: String,
-    cache: String,
+    pub domain: String,
+    pub cache_control: String,
 }
 
-#[derive(Serialize, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
-    allow_from: Vec<String>,
-    overridden_cache: Vec<OverriddenCache>,
+    pub allow_from: Vec<String>,
+    pub overridden_cache: Vec<OverriddenCache>,
 }
 
 impl Default for Config {
@@ -21,7 +22,7 @@ impl Default for Config {
                 vec![
                     OverriddenCache{
                         domain: String::from("localhost"),
-                        cache: String::from("immutable"),
+                        cache_control: String::from("immutable"),
                     }
                 ]
             ),

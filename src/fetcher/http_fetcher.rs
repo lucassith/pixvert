@@ -19,6 +19,7 @@ use crate::service_provider::Service;
 use super::Fetchable;
 use crate::http_cache::{HttpCacheHandler, RequestCacheResult};
 use chrono::{DateTime, Local};
+use std::time::Duration;
 
 pub struct HttpFetcher {
     cache: Arc<Mutex<dyn Cachable<FetchedObject> + Send + Sync>>,
@@ -46,7 +47,7 @@ impl HttpFetcher {
             request_builder = request_builder.header(header::IF_MODIFIED_SINCE, modified_date);
         }
         log::trace!("Trying to fetch resource with headers {:#?}", request_builder);
-        request_builder.send().await
+        request_builder.timeout(Duration::from_secs(5)).send().await
     }
 
     fn construct_hash(link: &String) -> String {
