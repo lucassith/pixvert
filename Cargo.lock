@@ -1908,7 +1908,6 @@ dependencies = [
  "md5",
  "mime",
  "rand",
- "regex",
  "reqwest",
  "serde",
  "serde_yaml",
