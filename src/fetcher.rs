@@ -7,15 +7,22 @@ use actix_web::http::{header, HeaderValue};
 use chrono;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
-use log::debug;
+use log::{error, debug};
 use reqwest::{RequestBuilder, StatusCode};
 use async_trait::async_trait;
+use uuid::Uuid;
 
 use crate::cache::CacheEngine;
+use crate::config::Config;
 use crate::tagged_element::TaggedElement;
 
 pub(super) const REQUEST_TIME_KEY: &str = "REQUEST_RECEIVED_AT";
 pub(super) const CHRONO_HTTP_DATE_FORMAT: &str = "%a, %d %b %Y %H:%M:%S GMT";
+pub const HTTP_ADDITIONAL_DATA_HEADERS_KEY: &str = "http_headers";
+
+pub fn generate_resource_tag(tag: &String) -> String {
+    return format!("{:x}", md5::compute(tag));
+}
 
 #[async_trait]
 pub trait Fetcher<T> {
@@ -23,18 +30,21 @@ pub trait Fetcher<T> {
 }
 
 pub struct ReqwestImageFetcher<'a> {
-    cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+    pub cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+    pub config: Config,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Resource {
-    content_type: String,
-    content: Vec<u8>,
+    pub content_type: String,
+    pub additional_data: HashMap<String, HashMap<String, String>>,
+    pub id: String,
+    pub content: Vec<u8>,
 }
 
 impl Default for Resource {
     fn default() -> Self {
-        Self{ content: Vec::default(), content_type: String::from("") }
+        Self{ content: Vec::default(), additional_data: HashMap::default(), id: Uuid::new_v4().to_string(), content_type: String::from("") }
     }
 }
 
@@ -90,10 +100,6 @@ impl ReqwestImageFetcher<'_> {
         return CanServeCache::No;
     }
 
-    fn generate_resource_tag(resource: &String) -> String {
-        return format!("{:x}", md5::compute(resource));
-    }
-
     fn insert_request_cache_data(cache_data: &mut HashMap<String, String>, header_name: String, header_value: Option<&HeaderValue>) {
         if let Some(header_value) = header_value {
             if let Ok(header_value) = header_value.to_str() {
@@ -101,8 +107,29 @@ impl ReqwestImageFetcher<'_> {
             }
         }
     }
+
+    fn get_cache_control(&self, resource: &String, header: Option<&HeaderValue>) -> String {
+        for overriden_cache in &self.config.overridden_cache {
+            if resource.contains(&overriden_cache.domain) {
+                return overriden_cache.domain.clone()
+            }
+        }
+        if let Some(header_value) = header {
+            return match header_value.to_str() {
+                Ok(cache_control) => {
+                    cache_control.to_string()
+                }
+                Err(e) => {
+                    error!("{}", e);
+                    String::from("")
+                }
+            }
+        }
+        String::from("")
+    }
 }
 
+#[derive(Debug)]
 pub enum FetchError {
     NotFound,
     NotAvailable,
@@ -123,7 +150,7 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
         if let Err(parse_error) = reqwest::Url::parse(resource.as_str()) {
             return Err(FetchError::InvalidResourceTag(parse_error.to_string()))
         }
-        let resource_tag = Self::generate_resource_tag(&resource);
+        let resource_tag = generate_resource_tag(&resource);
         let cache_element: Option<TaggedElement<Resource>>;
         {
             cache_element = match self.cache.lock().unwrap().get(resource_tag.as_str()) {
@@ -163,13 +190,24 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                     Some(content_type) => String::from(content_type.to_str().unwrap_or(mime::OCTET_STREAM.as_str())),
                     None => mime::OCTET_STREAM.to_string(),
                 };
+                let cache_control = self.get_cache_control(resource, response.headers().get(http::header::CACHE_CONTROL.as_str()));
                 Self::insert_request_cache_data(&mut cache_data, REQUEST_TIME_KEY.to_string(), Some(&HeaderValue::from_str(response_time.as_str()).unwrap()));
                 Self::insert_request_cache_data(&mut cache_data, http::header::ETAG.to_string(), response.headers().get(http::header::ETAG));
                 Self::insert_request_cache_data(&mut cache_data, http::header::EXPIRES.to_string(), response.headers().get(http::header::EXPIRES));
+                Self::insert_request_cache_data(&mut cache_data, http::header::CACHE_CONTROL.to_string(), Some(&HeaderValue::from_str(cache_control.as_str()).unwrap()));
                 let resource = TaggedElement {
                     object: Resource {
                         content_type,
                         content: response.bytes().await.unwrap().to_vec(),
+                        id: Uuid::new_v4().to_string(),
+                        additional_data: HashMap::from([(
+                                String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
+                                HashMap::from([
+                                    (String::from(header::CACHE_CONTROL.to_string()), String::from(cache_control)),
+                                    (String::from(header::EXPIRES.to_string()), cache_data.get(http::header::EXPIRES.as_str()).unwrap_or(&String::from("")).to_string())
+                                ]),
+                            )],
+                        )
                     },
                     cache_data
                 };
@@ -208,10 +246,11 @@ mod tests {
     use log4rs::append::console::ConsoleAppender;
     use log4rs::Config;
     use log4rs::config::{Appender, Root};
+    use crate::config::Config as ApplicationConfig;
     use log::LevelFilter;
     use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
 
-    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, REQUEST_TIME_KEY, ReqwestImageFetcher, Resource};
+    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, REQUEST_TIME_KEY, ReqwestImageFetcher, Resource};
     use crate::tagged_element::TaggedElement;
 
     fn init() {
@@ -229,7 +268,7 @@ mod tests {
     #[actix_rt::test]
     async fn test_get_new_resource() {
         let cache = Mutex::from(Box::from(NoCacheEngine{}) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher{ cache: &cache };
+        let fetcher = ReqwestImageFetcher{ cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
         let mock_body: Vec<u8> = Vec::from([0,1,2,3,4,5]);
 
@@ -249,7 +288,7 @@ mod tests {
     async fn test_should_set_cache_value() {
         let hashmap = HashMapCacheEngine::default();
         let cache = Mutex::from(Box::from(hashmap) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher{ cache: &cache };
+        let fetcher = ReqwestImageFetcher{ cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
         let mock_body: Vec<u8> = Vec::from([0,1,2,3,4,5]);
 
@@ -262,7 +301,7 @@ mod tests {
         });
         let resource_url = format!("http://{}:{}/image.png", server.host(), server.port());
         fetcher.fetch(&resource_url).await.ok().unwrap();
-        let cache_value = cache.lock().unwrap().get(ReqwestImageFetcher::generate_resource_tag(&resource_url).as_str());
+        let cache_value = cache.lock().unwrap().get(generate_resource_tag(&resource_url).as_str());
         let tagged_resource: TaggedElement<Resource> = bincode::deserialize(&cache_value.unwrap()).unwrap();
         assert_eq!(tagged_resource.object.content, mock_body)
     }

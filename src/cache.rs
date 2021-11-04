@@ -1,4 +1,4 @@
-mod file_cache;
+pub mod file_cache;
 
 use std::collections::HashMap;
 use std::io::Error;

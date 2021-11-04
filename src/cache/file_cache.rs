@@ -33,8 +33,10 @@ impl FileCache {
 
 impl CacheEngine for FileCache {
     fn get(&self, name: &str) -> Option<Vec<u8>> {
-        return match File::open(self.dir.join(FileCache::generate_file_name(name))) {
+        let path = self.dir.join(FileCache::generate_file_name(name));
+        return match File::open(&path) {
             Ok(mut file) => {
+                debug!("Found file {} under: {}", name, path.to_string_lossy());
                 let mut file_content = Vec::new();
                 file.read_to_end(&mut file_content).unwrap();
                 Option::Some(file_content)
@@ -47,7 +49,8 @@ impl CacheEngine for FileCache {
 
     fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error> {
         let file_path = self.dir.join(FileCache::generate_file_name(name));
-        let mut file = OpenOptions::new().create(true).create_new(true).write(true).read(true).open(
+
+        let mut file = OpenOptions::new().create(true).write(true).read(true).open(
             &file_path
         )?;
         debug!("Created file at {}", file_path.to_string_lossy());
