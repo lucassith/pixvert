@@ -133,6 +133,7 @@ impl ReqwestImageFetcher<'_> {
 pub enum FetchError {
     NotFound,
     NotAvailable,
+    NoAccess,
     InvalidResourceTag(String),
     InvalidFormat,
     Unknown(String),
@@ -147,8 +148,22 @@ impl From<reqwest::Error> for FetchError {
 #[async_trait]
 impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
     async fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
-        if let Err(parse_error) = reqwest::Url::parse(resource.as_str()) {
-            return Err(FetchError::InvalidResourceTag(parse_error.to_string()))
+        match reqwest::Url::parse(resource.as_str()) {
+            Ok(url) =>  {
+                if let Some(host) = url.host() {
+                    let allowed_hosts = self.config.allow_from.clone();
+                    if let None = allowed_hosts.into_iter().find(|allowed_host| -> bool {
+                        host.to_string().as_str().ends_with(allowed_host.as_str())
+                    }) {
+                        return Err(FetchError::NoAccess)
+                    }
+                } else {
+                    if self.config.allow_from.len() > 0 {
+                        return Err(FetchError::NoAccess)
+                    }
+                }
+            },
+            Err(parse_error) => return Err(FetchError::InvalidResourceTag(parse_error.to_string()))
         }
         let resource_tag = generate_resource_tag(&resource);
         let cache_element: Option<TaggedElement<Resource>>;

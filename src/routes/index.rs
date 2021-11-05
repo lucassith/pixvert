@@ -31,6 +31,9 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, kee
         Err(FetchError::InvalidFormat) => {
             return HttpResponse::UnprocessableEntity().body(format!("Resource under {} is not processable. Invalid format.", resource_uri))
         },
+        Err(FetchError::NoAccess) => {
+            return HttpResponse::Forbidden().body(format!("Resource under {} comes from a domain that is not configured as permitted.", resource_uri))
+        },
         Err(e) => {
             return HttpResponse::InternalServerError().body(format!("Failed to process resource under {}. Reason: {:#?}", resource_uri, e));
         }
