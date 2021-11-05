@@ -4,18 +4,37 @@ use crate::AppState;
 
 use crate::encoder::OutputFormat;
 use log::info;
+use crate::fetcher::{FetchError};
 use crate::fetcher::HTTP_ADDITIONAL_DATA_HEADERS_KEY;
 
-pub async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+pub async fn index(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+    return generate_image(req, data, false).await;
+}
+
+pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+    return generate_image(req, data, true).await;
+}
+
+pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, keep_ratio: bool) -> HttpResponse {
     let resource_url = &req.match_info().get("tail").unwrap().to_string();
     let resource_uri = urlencoding::decode(resource_url).unwrap();
-    let resource = data
-            .fetcher
-            .lock()
-            .unwrap()
-            .fetch(&resource_uri.to_string())
-            .await
-            .unwrap();
+    let resource = match data
+        .fetcher
+        .lock()
+        .unwrap()
+        .fetch(&resource_uri.to_string())
+        .await {
+        Ok(resource) => resource,
+        Err(FetchError::NotFound) => {
+            return HttpResponse::NotFound().body(format!("Resource under {} not found", resource_uri))
+        },
+        Err(FetchError::InvalidFormat) => {
+            return HttpResponse::UnprocessableEntity().body(format!("Resource under {} is not processable. Invalid format.", resource_uri))
+        },
+        Err(e) => {
+            return HttpResponse::InternalServerError().body(format!("Failed to process resource under {}. Reason: {:#?}", resource_uri, e));
+        }
+    };
 
     info!("Received image in format: {} - size: {}", &resource.content_type, size_of_val(&*resource.content.as_slice()));
 
@@ -48,7 +67,11 @@ pub async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse 
 
     match (width.parse::<usize>(), height.parse::<usize>()) {
         (Ok(width), Ok(height)) => {
-            img = data.resizer.lock().unwrap().resize(&resource_id, img, (width, height)).unwrap();
+            if keep_ratio {
+                img = data.resizer.lock().unwrap().resize(&resource_id, img, (width, height)).unwrap();
+            } else {
+                img = data.resizer.lock().unwrap().resize_exact(&resource_id, img, (width, height)).unwrap();
+            }
         }
         (Err(we), Err(he)) => {
             log::trace!("Failed to parse width {} and height {}. Err: {} {}", width, height, we, he);

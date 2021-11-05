@@ -22,7 +22,7 @@ chrono = "0.4.19"
 webp = "0.2.0"
 urlencoding = "2.1.0"
 md5 = "0.7.0"
-jpegxl-rs = "0.6.0"
+jpegxl-rs = "0.6.1"
 rand = "0.8.4"
 uuid = { version = "0.8.2",  default-features = false, features = ["v4"] }
 tempfile = "3.2.0"

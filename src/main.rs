@@ -7,12 +7,12 @@ use figment::providers::{Format, Yaml};
 use crate::config::Config;
 use log::error;
 use crate::cache::{CacheEngine, HashMapCacheEngine};
-use crate::cache::file_cache::FileCache;
 use crate::decoder::{CachedImageDecoder, ImageDecoder};
 use crate::encoder::{AllInOneCachedImageEncoder, ImageEncoder};
 use crate::fetcher::{Fetcher, ReqwestImageFetcher, Resource};
 use crate::resizer::{CachedResizer, Resizer};
-use crate::routes::index::index;
+use crate::routes::health::health;
+use crate::routes::index::{index, index_with_ratio};
 
 mod image;
 mod cache;
@@ -24,12 +24,13 @@ mod resizer;
 mod encoder;
 mod decoder;
 
-pub struct AppState {
+pub struct AppState<'a> {
     config: Mutex<Config>,
     fetcher: Mutex<Box<dyn Fetcher<Resource> + Send>>,
     decoder: Mutex<Box<dyn ImageDecoder + Send>>,
     resizer: Mutex<Box<dyn Resizer + Send>>,
     encoder: Mutex<Box<dyn ImageEncoder + Send>>,
+    cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
 }
 
 #[actix_web::main]
@@ -75,9 +76,13 @@ async fn main() -> std::io::Result<()> {
             resizer: Mutex::new(Box::new(resizer)),
             encoder: Mutex::new(Box::new(encoder)),
             decoder: Mutex::new(Box::new(decoder)),
+            cache: &*arc_cache
         });
         App::new()
             .app_data(app_state.clone().clone())
+            .route("/health", web::get().to(health))
+            .route("/{width}_{height}/keep-ratio/{format}/{tail:.*}", web::get().to(index_with_ratio))
+            .route("/{width}_{height}/keep-ratio/{tail:.*}", web::get().to(index_with_ratio))
             .route("/{width}_{height}/{format}/{tail:.*}", web::get().to(index))
             .route("/{width}_{height}/{tail:.*}", web::get().to(index))
             .route("/{format}/{tail:.*}", web::get().to(index))

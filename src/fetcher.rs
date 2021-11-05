@@ -111,7 +111,7 @@ impl ReqwestImageFetcher<'_> {
     fn get_cache_control(&self, resource: &String, header: Option<&HeaderValue>) -> String {
         for overriden_cache in &self.config.overridden_cache {
             if resource.contains(&overriden_cache.domain) {
-                return overriden_cache.domain.clone()
+                return overriden_cache.cache_control.clone()
             }
         }
         if let Some(header_value) = header {
@@ -195,6 +195,15 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                 Self::insert_request_cache_data(&mut cache_data, http::header::ETAG.to_string(), response.headers().get(http::header::ETAG));
                 Self::insert_request_cache_data(&mut cache_data, http::header::EXPIRES.to_string(), response.headers().get(http::header::EXPIRES));
                 Self::insert_request_cache_data(&mut cache_data, http::header::CACHE_CONTROL.to_string(), Some(&HeaderValue::from_str(cache_control.as_str()).unwrap()));
+                let mut http_hashmap: HashMap<String, String> = HashMap::default();
+                let cache_control_string = String::from(&cache_control);
+                if !cache_control_string.is_empty() {
+                    http_hashmap.insert(String::from(header::CACHE_CONTROL.to_string()), cache_control_string);
+                }
+                let expire_string = cache_data.get(http::header::EXPIRES.as_str()).unwrap_or(&String::from("")).to_string();
+                if !expire_string.is_empty() {
+                    http_hashmap.insert(String::from(header::EXPIRES.to_string()), expire_string);
+                }
                 let resource = TaggedElement {
                     object: Resource {
                         content_type,
@@ -202,10 +211,7 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                         id: Uuid::new_v4().to_string(),
                         additional_data: HashMap::from([(
                                 String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
-                                HashMap::from([
-                                    (String::from(header::CACHE_CONTROL.to_string()), String::from(cache_control)),
-                                    (String::from(header::EXPIRES.to_string()), cache_data.get(http::header::EXPIRES.as_str()).unwrap_or(&String::from("")).to_string())
-                                ]),
+                                http_hashmap
                             )],
                         )
                     },

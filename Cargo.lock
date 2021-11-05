@@ -1446,9 +1446,9 @@ dependencies = [
 
 [[package]]
 name = "jpegxl-rs"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb6227830835812c8472e34f0040267bbd27db5dedbf245ef98a1163ad510d2a"
+checksum = "245811ab69b6d4c6c3b8acdf6b1cfed7b52dc45ba920860e8f19e74489273c88"
 dependencies = [
  "derive_builder",
  "image",
@@ -1459,9 +1459,9 @@ dependencies = [
 
 [[package]]
 name = "jpegxl-sys"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f06a06016f0c5cb3c981223d1f8495e76a275d30800c74e798e1db1dc6dc4c38"
+checksum = "f1baa55d42a033d146cb75fb3c61973260f74928280be4b1a9a606d33f62f662"
 dependencies = [
  "cmake",
  "num_cpus",

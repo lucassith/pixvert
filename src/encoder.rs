@@ -19,6 +19,7 @@ pub enum OutputFormat {
     JpegXlLoseless,
     WebpLoseless,
     Webp(f32),
+    Bmp,
 }
 
 impl FromStr for OutputFormat {
@@ -26,6 +27,7 @@ impl FromStr for OutputFormat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("png") { return Ok(OutputFormat::Png); }
+        if s.starts_with("bmp") { return Ok(OutputFormat::Bmp); }
         if s.starts_with("jpegxl") {
             let (_, quality) = s.split_at(6);
             return if quality != "" {
@@ -64,6 +66,7 @@ impl FromStr for OutputFormat {
         }
         if s == "image/webp" { return Ok(OutputFormat::WebpLoseless) }
         if s == "image/png" { return Ok(OutputFormat::Png) }
+        if s == "image/bmp" { return Ok(OutputFormat::Bmp) }
         if s == "image/jpeg" { return Ok(OutputFormat::Jpeg(90)) }
         if s == "image/jpegxl" { return Ok(OutputFormat::JpegXl(90f32)) }
         return Err(ParseError::InvalidFormat(s.to_string()));
@@ -79,6 +82,7 @@ impl Display for OutputFormat {
             OutputFormat::Webp(q) => write!(f, "image/webp - quality: {}", q),
             OutputFormat::JpegXl(q) => write!(f, "image/jxl - quality: {}", q),
             OutputFormat::JpegXlLoseless => write!(f, "image/jxl - loseless"),
+            OutputFormat::Bmp => write!(f, "image/bmp"),
         }
     }
 }
@@ -148,6 +152,10 @@ impl ImageEncoder for AllInOneCachedImageEncoder<'_> {
             OutputFormat::Png => {
                 resource.write_to(&mut image, ImageOutputFormat::Png);
                 content_type = mime::IMAGE_PNG.to_string();
+            },
+            OutputFormat::Bmp => {
+                resource.write_to(&mut image, ImageOutputFormat::Bmp);
+                content_type = mime::IMAGE_BMP.to_string();
             },
             OutputFormat::JpegXl(quality) => {
                 let mut encoder: JxlEncoder = encoder_builder()
