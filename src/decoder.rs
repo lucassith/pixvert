@@ -16,36 +16,40 @@ pub struct CachedImageDecoder<'a> {
 
 impl ImageDecoder for CachedImageDecoder<'_> {
     fn decode(&self, tag: &String, resource: Resource) -> DynamicImage {
-
         let tag = generate_resource_tag(&format!("Image Decoder {}", tag));
 
         if let Some(dynamic_image_bytes) = self.cache.lock().unwrap().get(&tag) {
             return bincode::deserialize::<Image>(&dynamic_image_bytes).unwrap().into();
         }
 
-        let mut reader = ImageReader::new(Cursor::new(
-            resource.content
-        ));
+        let mut img: DynamicImage;
 
-
-        match resource.content_type.as_str() {
-            "image/jpeg" => {
-                reader.set_format(ImageFormat::Jpeg);
+        if resource.content_type.as_str() == "image/webp" {
+            let decoder = webp::Decoder::new(resource.content.as_slice());
+            img = decoder.decode().unwrap().to_image();
+        } else {
+            let mut reader = ImageReader::new(Cursor::new(
+                resource.content
+            ));
+            match resource.content_type.as_str() {
+                "image/jpeg" => {
+                    reader.set_format(ImageFormat::Jpeg);
+                }
+                "image/png" => {
+                    reader.set_format(ImageFormat::Png);
+                }
+                "image/bmp" => {
+                    reader.set_format(ImageFormat::Bmp);
+                }
+                "image/x-tga" | "image/x-targa" => {
+                    reader.set_format(ImageFormat::Tga);
+                }
+                _ => {
+                    reader = reader.with_guessed_format().unwrap();
+                }
             }
-            "image/png" => {
-                reader.set_format(ImageFormat::Png);
-            }
-            "image/bmp" => {
-                reader.set_format(ImageFormat::Bmp);
-            }
-            "image/x-tga" | "image/x-targa" => {
-                reader.set_format(ImageFormat::Tga);
-            }
-            _ => {
-                reader = reader.with_guessed_format().unwrap();
-            }
+            img = reader.decode().unwrap();
         }
-        let img = reader.decode().unwrap();
 
         self.cache.lock().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
 

@@ -81,6 +81,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone().clone())
             .route("/_health", web::get().to(health))
+            .route("/cache", web::get().to(health))
             .route("/{width}_{height}/keep-ratio/{format}/{tail:.*}", web::get().to(index_with_ratio))
             .route("/{width}_{height}/keep-ratio/{tail:.*}", web::get().to(index_with_ratio))
             .route("/{width}_{height}/{format}/{tail:.*}", web::get().to(index))
