@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use image_crate::{DynamicImage, GenericImageView, ImageOutputFormat};
 use jpegxl_rs::encode::{EncoderResult, EncoderSpeed, JxlEncoder};
@@ -40,7 +40,7 @@ impl FromStr for OutputFormat {
                 Ok(OutputFormat::JpegXl(quality_f32))
             } else {
                 Ok(OutputFormat::JpegXlLoseless)
-            }
+            };
         }
         if s.starts_with("jpeg") {
             let (_, quality) = s.split_at(4);
@@ -52,7 +52,7 @@ impl FromStr for OutputFormat {
                 Ok(OutputFormat::Jpeg(quality_u8))
             } else {
                 Ok(OutputFormat::Jpeg(90))
-            }
+            };
         }
         if s.starts_with("webp") {
             let (_, quality) = s.split_at(4);
@@ -64,13 +64,13 @@ impl FromStr for OutputFormat {
                 Ok(OutputFormat::Webp(quality_f32))
             } else {
                 Ok(OutputFormat::WebpLoseless)
-            }
+            };
         }
-        if s == "image/webp" { return Ok(OutputFormat::WebpLoseless) }
-        if s == "image/png" { return Ok(OutputFormat::Png) }
-        if s == "image/bmp" { return Ok(OutputFormat::Bmp) }
-        if s == "image/jpeg" { return Ok(OutputFormat::Jpeg(90)) }
-        if s == "image/jpegxl" { return Ok(OutputFormat::JpegXl(90f32)) }
+        if s == "image/webp" { return Ok(OutputFormat::WebpLoseless); }
+        if s == "image/png" { return Ok(OutputFormat::Png); }
+        if s == "image/bmp" { return Ok(OutputFormat::Bmp); }
+        if s == "image/jpeg" { return Ok(OutputFormat::Jpeg(90)); }
+        if s == "image/jpegxl" { return Ok(OutputFormat::JpegXl(90f32)); }
         return Err(ParseError::InvalidFormat(s.to_string()));
     }
 }
@@ -150,15 +150,15 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
             OutputFormat::Jpeg(quality) => {
                 resource.write_to(&mut image, ImageOutputFormat::Jpeg(quality));
                 content_type = mime::IMAGE_JPEG.to_string();
-            },
+            }
             OutputFormat::Png => {
                 resource.write_to(&mut image, ImageOutputFormat::Png);
                 content_type = mime::IMAGE_PNG.to_string();
-            },
+            }
             OutputFormat::Bmp => {
                 resource.write_to(&mut image, ImageOutputFormat::Bmp);
                 content_type = mime::IMAGE_BMP.to_string();
-            },
+            }
             OutputFormat::JpegXl(quality) => {
                 let mut encoder: JxlEncoder = encoder_builder()
                     .lossless(true)
@@ -169,7 +169,7 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
                 let result: EncoderResult<u8> = encoder.encode(&resource.as_bytes(), resource.width(), resource.height()).unwrap();
                 image = result.data;
                 content_type = String::from("image/jxl");
-            },
+            }
             OutputFormat::JpegXlLoseless => {
                 let mut encoder: JxlEncoder = encoder_builder()
                     .lossless(true)
@@ -179,19 +179,19 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
                 let result: EncoderResult<u8> = encoder.encode(&resource.as_bytes(), resource.width(), resource.height()).unwrap();
                 image = result.data;
                 content_type = String::from("image/jxl");
-            },
+            }
             OutputFormat::WebpLoseless => {
                 let mut encoder = webp::Encoder::from_image(&resource).unwrap();
                 image = encoder.encode_lossless().to_vec();
                 content_type = String::from("image/webp")
-            },
+            }
             OutputFormat::Webp(quality) => {
                 let mut encoder = webp::Encoder::from_image(&resource).unwrap();
                 image = encoder.encode(quality).to_vec();
                 content_type = String::from("image/webp")
             }
         }
-        let encoded_image = EncodedImage{
+        let encoded_image = EncodedImage {
             image,
             content_type,
         };
@@ -199,6 +199,6 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
         info!("Saving {} {} to cache.", tag, output_format);
         self.cache.write().unwrap().set(&tag, &bincode::serialize(&encoded_image.clone()).unwrap());
 
-        return Ok(encoded_image)
+        return Ok(encoded_image);
     }
 }

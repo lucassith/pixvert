@@ -23,7 +23,7 @@ impl From<FetchError> for HttpResponse {
             FetchError::NoAccess => HttpResponse::Forbidden().body(format!("{:#?}", e)),
             FetchError::InvalidFormat => HttpResponse::UnprocessableEntity().body(format!("{:#?}", e)),
             _ => HttpResponse::InternalServerError().body(format!("{:#?}", e)),
-        }
+        };
     }
 }
 
@@ -36,10 +36,9 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ra
         .unwrap()
         .fetch(&resource_uri.to_string())
         .await {
-            Ok(r) => r,
-            Err(e) => return e.into(),
-        };
-
+        Ok(r) => r,
+        Err(e) => return e.into(),
+    };
 
 
     info!("Received image in format: {} - size: {}", &resource.content_type, size_of_val(&*resource.content.as_slice()));
@@ -49,9 +48,9 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ra
         .get("format")
         .unwrap_or(resource.content_type.as_str())
         .parse::<OutputFormat>() {
-            Ok(f) => f,
-            Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.content_type.as_str()))),
-        };
+        Ok(f) => f,
+        Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.content_type.as_str()))),
+    };
 
 
     info!("Image will be converted to: {}", output_format);

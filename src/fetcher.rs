@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Add;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use actix_web::http;
 use actix_web::http::{header, HeaderValue};

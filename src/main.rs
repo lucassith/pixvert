@@ -61,15 +61,15 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         let c_arc_cache = arc_cache.clone();
-        let fetcher = ReqwestImageFetcher{
+        let fetcher = ReqwestImageFetcher {
             cache: c_arc_cache.clone(),
             config: config.clone(),
         };
-        let resizer = CachedResizer{
+        let resizer = CachedResizer {
             cache: c_arc_cache.clone(),
         };
-        let encoder = AllInOneCachedImageEncoder{cache: c_arc_cache.clone()};
-        let decoder = CachedImageDecoder{cache: c_arc_cache.clone()};
+        let encoder = AllInOneCachedImageEncoder { cache: c_arc_cache.clone() };
+        let decoder = CachedImageDecoder { cache: c_arc_cache.clone() };
 
         let app_state = web::Data::new(AppState {
             config: Mutex::new(config.clone()),
@@ -77,7 +77,7 @@ async fn main() -> std::io::Result<()> {
             resizer: Mutex::new(Box::new(resizer)),
             encoder: Mutex::new(Box::new(encoder)),
             decoder: Mutex::new(Box::new(decoder)),
-            cache: c_arc_cache.clone()
+            cache: c_arc_cache.clone(),
         });
         App::new()
             .app_data(app_state.clone().clone())

@@ -14,7 +14,7 @@ impl From<DynamicImage> for Image {
             image: img.to_rgba8().as_raw().clone(),
             width: img.width(),
             height: img.height(),
-        }
+        };
     }
 }
 
@@ -22,13 +22,13 @@ impl From<Image> for DynamicImage {
     fn from(img: Image) -> Self {
         return DynamicImage::ImageRgba8(
             RgbaImage::from_raw(img.width, img.height, img.image).unwrap()
-        )
+        );
     }
 }
 
 impl Default for Image {
     fn default() -> Self {
-        Image {image: Vec::default(), width: 0, height: 0 }
+        Image { image: Vec::default(), width: 0, height: 0 }
     }
 }
 
@@ -41,8 +41,8 @@ mod tests {
 
     #[test]
     fn serialize_image_struct() {
-        let mut img: DynamicImage = DynamicImage::new_rgb8(2,3).into();
-        img.put_pixel(1,1, Rgba([255, 0, 100, 255]));
+        let mut img: DynamicImage = DynamicImage::new_rgb8(2, 3).into();
+        img.put_pixel(1, 1, Rgba([255, 0, 100, 255]));
 
         let image_struct: image::Image = img.into();
 
@@ -51,9 +51,10 @@ mod tests {
 
         assert_eq!(expected_bincode, s);
     }
+
     #[test]
     fn deserialize_image_struct() {
-        let image_bincode: &[u8]  = &[24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 100, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 0, 0, 0, 3, 0, 0, 0];
+        let image_bincode: &[u8] = &[24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 100, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 0, 0, 0, 3, 0, 0, 0];
 
         let image: image::Image = bincode::deserialize(image_bincode).unwrap();
 

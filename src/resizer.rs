@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use image_crate::DynamicImage;
 use image_crate::imageops::FilterType;

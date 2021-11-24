@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use image_crate::{DynamicImage, ImageFormat};
 use image_crate::io::Reader as ImageReader;
