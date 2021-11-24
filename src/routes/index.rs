@@ -8,11 +8,11 @@ use crate::encoder::OutputFormat;
 use crate::fetcher::FetchError;
 use crate::fetcher::HTTP_ADDITIONAL_DATA_HEADERS_KEY;
 
-pub async fn index(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+pub async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     return generate_image(req, data, false).await;
 }
 
-pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     return generate_image(req, data, true).await;
 }
 
@@ -27,7 +27,7 @@ impl From<FetchError> for HttpResponse {
     }
 }
 
-pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, keep_ratio: bool) -> HttpResponse {
+pub async fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ratio: bool) -> HttpResponse {
     let resource_url = &req.match_info().get("tail").unwrap().to_string();
     let resource_uri = urlencoding::decode(resource_url).unwrap();
     let resource = match data

@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use image_crate::{DynamicImage, GenericImageView, ImageOutputFormat};
 use jpegxl_rs::encode::{EncoderResult, EncoderSpeed, JxlEncoder};
@@ -131,17 +131,17 @@ pub trait ImageEncoder {
     fn encode(&self, tag: &String, resource: DynamicImage, output_format: OutputFormat) -> Result<EncodedImage, EncodingError>;
 }
 
-pub struct AllInOneCachedImageEncoder<'a> {
-    pub cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+pub struct AllInOneCachedImageEncoder {
+    pub cache: Arc<RwLock<Box<dyn CacheEngine + Send + Sync>>>,
 }
 
-impl ImageEncoder for AllInOneCachedImageEncoder<'_> {
+impl ImageEncoder for AllInOneCachedImageEncoder {
     fn encode(&self, tag: &String, resource: DynamicImage, output_format: OutputFormat) -> Result<EncodedImage, EncodingError> {
         let mut image: Vec<u8> = Vec::default();
         let content_type: String;
 
         let tag = generate_resource_tag(&format!("{} - {} {}x{}", tag, output_format, resource.width(), resource.height()));
-        if let Some(cached_encoded_image) = self.cache.lock().unwrap().get(&tag) {
+        if let Some(cached_encoded_image) = self.cache.read().unwrap().get(&tag) {
             info!("Serving {} {} from cache.", tag, output_format);
             return Ok(bincode::deserialize(cached_encoded_image.as_slice()).unwrap());
         }
@@ -197,7 +197,7 @@ impl ImageEncoder for AllInOneCachedImageEncoder<'_> {
         };
 
         info!("Saving {} {} to cache.", tag, output_format);
-        self.cache.lock().unwrap().set(&tag, &bincode::serialize(&encoded_image.clone()).unwrap());
+        self.cache.write().unwrap().set(&tag, &bincode::serialize(&encoded_image.clone()).unwrap());
 
         return Ok(encoded_image)
     }

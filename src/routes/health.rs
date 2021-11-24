@@ -2,8 +2,8 @@ use actix_web::{HttpResponse, web};
 
 use crate::AppState;
 
-pub async fn health(data: web::Data<AppState<'_>>) -> HttpResponse {
-    if let Err(e) = data.cache.lock() {
+pub async fn health(data: web::Data<AppState>) -> HttpResponse {
+    if let Err(e) = data.cache.write() {
         return HttpResponse::InternalServerError().body(format!("{:#?}", e));
     }
     if let Err(e) = data.decoder.lock() {
