@@ -2,14 +2,16 @@ use std::fmt::{Display, Formatter};
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 use std::sync::Mutex;
+
 use image_crate::{DynamicImage, GenericImageView, ImageOutputFormat};
 use jpegxl_rs::encode::{EncoderResult, EncoderSpeed, JxlEncoder};
-use jpegxl_rs::encoder_builder;
-use crate::cache::CacheEngine;
 use jpegxl_rs::EncodeError as JpegXlEncodeError;
-use serde::{Serialize, Deserialize};
-use crate::fetcher::generate_resource_tag;
+use jpegxl_rs::encoder_builder;
 use log::info;
+use serde::{Deserialize, Serialize};
+
+use crate::cache::CacheEngine;
+use crate::fetcher::generate_resource_tag;
 
 #[derive(Debug)]
 pub enum OutputFormat {

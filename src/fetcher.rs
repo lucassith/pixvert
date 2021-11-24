@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Mutex;
-use actix_web::http;
 
+use actix_web::http;
 use actix_web::http::{header, HeaderValue};
-use chrono;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
-use log::{error, debug};
-use reqwest::{RequestBuilder, StatusCode};
 use async_trait::async_trait;
+use chrono;
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use log::{debug, error};
+use reqwest::{RequestBuilder, StatusCode};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::cache::CacheEngine;
@@ -259,7 +259,7 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
 mod tests {
     use std::collections::HashMap;
     use std::ops::{Add, Sub};
-    use std::sync::{Mutex};
+    use std::sync::Mutex;
 
     use actix_web::http::header;
     use chrono::{Duration, Utc};
@@ -267,10 +267,10 @@ mod tests {
     use log4rs::append::console::ConsoleAppender;
     use log4rs::Config;
     use log4rs::config::{Appender, Root};
-    use crate::config::Config as ApplicationConfig;
     use log::LevelFilter;
-    use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
 
+    use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
+    use crate::config::Config as ApplicationConfig;
     use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, REQUEST_TIME_KEY, ReqwestImageFetcher, Resource};
     use crate::tagged_element::TaggedElement;
 

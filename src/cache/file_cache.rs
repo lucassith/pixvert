@@ -1,10 +1,12 @@
-use std::path::{Path, PathBuf};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Read, Write};
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use std::path::{Path, PathBuf};
+
 use log::debug;
+use rand::{Rng, thread_rng};
+use rand::distributions::Alphanumeric;
+
 use crate::cache::CacheEngine;
 
 pub struct FileCache {
@@ -62,7 +64,9 @@ impl CacheEngine for FileCache {
 #[cfg(test)]
 mod tests {
     use std::fs;
+
     use tempfile;
+
     use crate::cache::CacheEngine;
     use crate::cache::file_cache::FileCache;
 

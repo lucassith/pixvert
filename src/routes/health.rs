@@ -1,4 +1,5 @@
 use actix_web::{HttpResponse, web};
+
 use crate::AppState;
 
 pub async fn health(data: web::Data<AppState<'_>>) -> HttpResponse {

@@ -1,10 +1,11 @@
 use std::mem::size_of_val;
-use actix_web::{HttpRequest, HttpResponse, web};
-use crate::AppState;
 
-use crate::encoder::OutputFormat;
+use actix_web::{HttpRequest, HttpResponse, web};
 use log::info;
-use crate::fetcher::{FetchError};
+
+use crate::AppState;
+use crate::encoder::OutputFormat;
+use crate::fetcher::FetchError;
 use crate::fetcher::HTTP_ADDITIONAL_DATA_HEADERS_KEY;
 
 pub async fn index(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
@@ -13,6 +14,17 @@ pub async fn index(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpRespo
 
 pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
     return generate_image(req, data, true).await;
+}
+
+impl From<FetchError> for HttpResponse {
+    fn from(e: FetchError) -> Self {
+        return match e {
+            FetchError::NotFound => HttpResponse::NotFound().body(format!("{:#?}", e)),
+            FetchError::NoAccess => HttpResponse::Forbidden().body(format!("{:#?}", e)),
+            FetchError::InvalidFormat => HttpResponse::UnprocessableEntity().body(format!("{:#?}", e)),
+            _ => HttpResponse::InternalServerError().body(format!("{:#?}", e)),
+        }
+    }
 }
 
 pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, keep_ratio: bool) -> HttpResponse {
@@ -24,32 +36,23 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, kee
         .unwrap()
         .fetch(&resource_uri.to_string())
         .await {
-        Ok(resource) => resource,
-        Err(FetchError::NotFound) => {
-            return HttpResponse::NotFound().body(format!("Resource under {} not found", resource_uri))
-        },
-        Err(FetchError::InvalidFormat) => {
-            return HttpResponse::UnprocessableEntity().body(format!("Resource under {} is not processable. Invalid format.", resource_uri))
-        },
-        Err(FetchError::NoAccess) => {
-            return HttpResponse::Forbidden().body(format!("Resource under {} comes from a domain that is not configured as permitted.", resource_uri))
-        },
-        Err(e) => {
-            return HttpResponse::InternalServerError().body(format!("Failed to process resource under {}. Reason: {:#?}", resource_uri, e));
-        }
-    };
+            Ok(r) => r,
+            Err(e) => return e.into(),
+        };
+
+
 
     info!("Received image in format: {} - size: {}", &resource.content_type, size_of_val(&*resource.content.as_slice()));
 
-    let mut format = req
+    let mut output_format = match req
         .match_info()
         .get("format")
         .unwrap_or(resource.content_type.as_str())
-        .parse::<OutputFormat>();
-    if let Err(err) = format {
-        return HttpResponse::UnprocessableEntity().body(format!("{:#?}", err));
-    }
-    let output_format = format.unwrap();
+        .parse::<OutputFormat>() {
+            Ok(f) => f,
+            Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.content_type.as_str()))),
+        };
+
 
     info!("Image will be converted to: {}", output_format);
 
@@ -63,7 +66,12 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, kee
     }
 
     let resource_id = resource.id.clone();
-    let mut img = data.decoder.lock().unwrap().decode(&resource_id, resource);
+    let mut img = match data.decoder.lock().unwrap().decode(&resource_id, resource) {
+        Ok(img) => img,
+        Err(err) => {
+            return HttpResponse::UnprocessableEntity().body(format!("{:#?}", err));
+        }
+    };
 
     let width = req.match_info().get("width").unwrap_or("no-width");
     let height = req.match_info().get("height").unwrap_or("no-height");

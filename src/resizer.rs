@@ -1,7 +1,8 @@
-use std::error::Error;
 use std::sync::Mutex;
+
 use image_crate::DynamicImage;
 use image_crate::imageops::FilterType;
+
 use crate::cache::CacheEngine;
 use crate::fetcher::generate_resource_tag;
 use crate::image::Image;

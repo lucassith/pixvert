@@ -1,5 +1,5 @@
 use image_crate::{DynamicImage, GenericImageView, RgbaImage};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Image {
@@ -36,6 +36,7 @@ impl Default for Image {
 #[cfg(test)]
 mod tests {
     use image_crate::{DynamicImage, GenericImage, Rgba};
+
     use crate::image;
 
     #[test]

@@ -1,12 +1,14 @@
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
 use std::sync::{Arc, Mutex};
-use actix_web::{HttpServer, web, App};
+
+use actix_web::{App, HttpServer, web};
 use figment::Figment;
 use figment::providers::{Format, Yaml};
-use crate::config::Config;
 use log::error;
+
 use crate::cache::{CacheEngine, HashMapCacheEngine};
+use crate::config::Config;
 use crate::decoder::{CachedImageDecoder, ImageDecoder};
 use crate::encoder::{AllInOneCachedImageEncoder, ImageEncoder};
 use crate::fetcher::{Fetcher, ReqwestImageFetcher, Resource};

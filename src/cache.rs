@@ -1,9 +1,8 @@
-pub mod file_cache;
-
 use std::collections::HashMap;
 use std::io::Error;
 use std::sync::Mutex;
 
+pub mod file_cache;
 
 pub trait CacheEngine {
     fn get(&self, name: &str) -> Option<Vec<u8>>;

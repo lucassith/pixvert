@@ -1,13 +1,21 @@
 use std::io::Cursor;
 use std::sync::Mutex;
+
 use image_crate::{DynamicImage, ImageFormat};
-use crate::cache::CacheEngine;
 use image_crate::io::Reader as ImageReader;
+
+use crate::cache::CacheEngine;
 use crate::fetcher::{generate_resource_tag, Resource};
 use crate::image::Image;
 
 pub trait ImageDecoder {
-    fn decode(&self, tag: &String, resource: Resource) -> DynamicImage;
+    fn decode(&self, tag: &String, resource: Resource) -> Result<DynamicImage, DecodeError>;
+}
+
+#[derive(Debug)]
+pub enum DecodeError {
+    UnknownFormat(String),
+    MismatchedFormat,
 }
 
 pub struct CachedImageDecoder<'a> {
@@ -15,18 +23,21 @@ pub struct CachedImageDecoder<'a> {
 }
 
 impl ImageDecoder for CachedImageDecoder<'_> {
-    fn decode(&self, tag: &String, resource: Resource) -> DynamicImage {
+    fn decode(&self, tag: &String, resource: Resource) -> Result<DynamicImage, DecodeError> {
         let tag = generate_resource_tag(&format!("Image Decoder {}", tag));
 
         if let Some(dynamic_image_bytes) = self.cache.lock().unwrap().get(&tag) {
-            return bincode::deserialize::<Image>(&dynamic_image_bytes).unwrap().into();
+            return Ok(bincode::deserialize::<Image>(&dynamic_image_bytes).unwrap().into());
         }
 
         let mut img: DynamicImage;
 
         if resource.content_type.as_str() == "image/webp" {
             let decoder = webp::Decoder::new(resource.content.as_slice());
-            img = decoder.decode().unwrap().to_image();
+            img = match decoder.decode() {
+                Some(image) => image.to_image(),
+                None => return Err(DecodeError::MismatchedFormat),
+            };
         } else {
             let mut reader = ImageReader::new(Cursor::new(
                 resource.content
@@ -48,11 +59,15 @@ impl ImageDecoder for CachedImageDecoder<'_> {
                     reader = reader.with_guessed_format().unwrap();
                 }
             }
-            img = reader.decode().unwrap();
+
+            if let Ok(image) = reader.decode() {
+                img = image;
+            } else {
+                return Err(DecodeError::UnknownFormat(resource.content_type.clone()));
+            }
         }
 
         self.cache.lock().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
-
-        return img;
+        return Ok(img);
     }
 }
