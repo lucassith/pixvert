@@ -98,10 +98,10 @@ curl localhost:8080/100_400/webp/https%3A%2F%2Fvia.placeholder.com%2F150x100
 
 ## TODO:
 
-- [ ] Handle Cache-Control header when fetching external image.
-- [x] Implement `?quality=100` query parameter.
-- [ ] Implement `?exact-scale=true` query parameter.
-- [ ] Implement Cache-Control for response. 
-- [ ] Configuration file.
-- [ ] Implement JPEG-XL for encoding.
-- [ ] Implement JPEG-XL for decoding.
+- [x] Handle Cache-Control header when fetching external image.
+- [x] Implement `quality` parameter.
+- [x] Implement keeping aspect ratio.
+- [x] Implement Cache-Control for response. 
+- [x] Configuration file.
+- [x] Implement JPEG-XL for encoding.
+- [x] Implement JPEG-XL for decoding.
