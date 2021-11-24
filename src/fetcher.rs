@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Add;
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 
 use actix_web::http;
 use actix_web::http::{header, HeaderValue};
@@ -29,8 +29,8 @@ pub trait Fetcher<T> {
     async fn fetch(&self, resource: &String) -> Result<T, FetchError>;
 }
 
-pub struct ReqwestImageFetcher<'a> {
-    pub cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+pub struct ReqwestImageFetcher {
+    pub cache: Arc<RwLock<Box<dyn CacheEngine + Send + Sync>>>,
     pub config: Config,
 }
 
@@ -44,7 +44,7 @@ pub struct Resource {
 
 impl Default for Resource {
     fn default() -> Self {
-        Self{ content: Vec::default(), additional_data: HashMap::default(), id: Uuid::new_v4().to_string(), content_type: String::from("") }
+        Self { content: Vec::default(), additional_data: HashMap::default(), id: Uuid::new_v4().to_string(), content_type: String::from("") }
     }
 }
 
@@ -56,7 +56,7 @@ pub enum CanServeCache {
     No,
 }
 
-impl ReqwestImageFetcher<'_> {
+impl ReqwestImageFetcher {
     pub fn can_serve_cache(resource: &TaggedElement<Resource>) -> CanServeCache {
         if let Some(cache_control_header) = resource.cache_data.get(header::CACHE_CONTROL.as_str()) {
             let cc = cache_control::CacheControl::from_value(cache_control_header).unwrap();
@@ -95,7 +95,7 @@ impl ReqwestImageFetcher<'_> {
             return CanServeCache::MustReinvalidateETag(etag.clone());
         }
         if let Some(request_time) = resource.cache_data.get(REQUEST_TIME_KEY) {
-            return CanServeCache::MustReinvalidateByRequestTime(request_time.parse().unwrap())
+            return CanServeCache::MustReinvalidateByRequestTime(request_time.parse().unwrap());
         }
         return CanServeCache::No;
     }
@@ -111,7 +111,7 @@ impl ReqwestImageFetcher<'_> {
     fn get_cache_control(&self, resource: &String, header: Option<&HeaderValue>) -> String {
         for overriden_cache in &self.config.overridden_cache {
             if resource.contains(&overriden_cache.domain) {
-                return overriden_cache.cache_control.clone()
+                return overriden_cache.cache_control.clone();
             }
         }
         if let Some(header_value) = header {
@@ -123,7 +123,7 @@ impl ReqwestImageFetcher<'_> {
                     error!("{}", e);
                     String::from("")
                 }
-            }
+            };
         }
         String::from("")
     }
@@ -146,32 +146,32 @@ impl From<reqwest::Error> for FetchError {
 }
 
 #[async_trait]
-impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
+impl Fetcher<Resource> for ReqwestImageFetcher {
     async fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
         match reqwest::Url::parse(resource.as_str()) {
-            Ok(url) =>  {
-                if let Some(host) = url.host() {
-                    let allowed_hosts = self.config.allow_from.clone();
-                    if let None = allowed_hosts.into_iter().find(|allowed_host| -> bool {
-                        host.to_string().as_str().ends_with(allowed_host.as_str())
-                    }) {
-                        return Err(FetchError::NoAccess)
-                    }
-                } else {
-                    if self.config.allow_from.len() > 0 {
-                        return Err(FetchError::NoAccess)
+            Ok(url) => {
+                if self.config.allow_from.len() > 0 {
+                    if let Some(host) = url.host() {
+                        let allowed_hosts = self.config.allow_from.clone();
+                        if let None = allowed_hosts.into_iter().find(|allowed_host| -> bool {
+                            host.to_string().as_str().ends_with(allowed_host.as_str())
+                        }) {
+                            return Err(FetchError::NoAccess);
+                        }
+                    } else {
+                        return Err(FetchError::InvalidResourceTag(url.to_string()));
                     }
                 }
-            },
+            }
             Err(parse_error) => return Err(FetchError::InvalidResourceTag(parse_error.to_string()))
         }
         let resource_tag = generate_resource_tag(&resource);
         let cache_element: Option<TaggedElement<Resource>>;
         {
-            cache_element = match self.cache.lock().unwrap().get(resource_tag.as_str()) {
+            cache_element = match self.cache.read().unwrap().get(resource_tag.as_str()) {
                 Some(data) => {
                     Some(bincode::deserialize(data.as_slice()).unwrap())
-                },
+                }
                 None => {
                     None
                 }
@@ -183,11 +183,11 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                 CanServeCache::Yes => return Ok(tagged_image.object.clone()),
                 CanServeCache::MustReinvalidateETag(etag) => reqwest::Client::new().get(resource).header(
                     http::header::IF_NONE_MATCH.as_str(),
-                    etag.as_str()
+                    etag.as_str(),
                 ),
                 CanServeCache::MustReinvalidateByRequestTime(time) => reqwest::Client::new().get(resource).header(
                     http::header::IF_MODIFIED_SINCE.as_str(),
-                    time.format(CHRONO_HTTP_DATE_FORMAT).to_string().as_str()
+                    time.format(CHRONO_HTTP_DATE_FORMAT).to_string().as_str(),
                 ),
                 CanServeCache::No => reqwest::Client::new().get(resource),
             };
@@ -225,15 +225,15 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                         content: response.bytes().await.unwrap().to_vec(),
                         id: Uuid::new_v4().to_string(),
                         additional_data: HashMap::from([(
-                                String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
-                                http_hashmap
-                            )],
-                        )
+                            String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
+                            http_hashmap
+                        )],
+                        ),
                     },
-                    cache_data
+                    cache_data,
                 };
                 {
-                    self.cache.lock().unwrap().set(
+                    self.cache.write().unwrap().set(
                         &resource_tag,
                         &bincode::serialize(&resource.clone()).unwrap(),
                     ).unwrap();
@@ -247,7 +247,7 @@ impl Fetcher<Resource> for ReqwestImageFetcher<'_> {
                     }
                     None => return Err(FetchError::Unknown("Server returned 'not modified' but the cache value doesn't exist.".to_string()))
                 }
-            },
+            }
             _ => {
                 todo!();
             }
@@ -281,17 +281,17 @@ mod tests {
             .build(Root::builder().appender("stdout").build(LevelFilter::Trace))
             .unwrap();
         match log4rs::init_config(config) {
-            Err(_) => {},
-            _ => {},
+            Err(_) => {}
+            _ => {}
         }
     }
 
     #[actix_rt::test]
     async fn test_get_new_resource() {
-        let cache = Mutex::from(Box::from(NoCacheEngine{}) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher{ cache: &cache, config: ApplicationConfig::default() };
+        let cache = Mutex::from(Box::from(NoCacheEngine {}) as Box<dyn CacheEngine + Send>);
+        let fetcher = ReqwestImageFetcher { cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
-        let mock_body: Vec<u8> = Vec::from([0,1,2,3,4,5]);
+        let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
 
         server.mock(|when, then| {
             when.method(GET)
@@ -309,9 +309,9 @@ mod tests {
     async fn test_should_set_cache_value() {
         let hashmap = HashMapCacheEngine::default();
         let cache = Mutex::from(Box::from(hashmap) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher{ cache: &cache, config: ApplicationConfig::default() };
+        let fetcher = ReqwestImageFetcher { cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
-        let mock_body: Vec<u8> = Vec::from([0,1,2,3,4,5]);
+        let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
 
         server.mock(|when, then| {
             when.method(GET)

@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use actix_web::{App, HttpServer, web};
 use figment::Figment;
@@ -26,13 +26,13 @@ mod resizer;
 mod encoder;
 mod decoder;
 
-pub struct AppState<'a> {
+pub struct AppState {
     config: Mutex<Config>,
     fetcher: Mutex<Box<dyn Fetcher<Resource> + Send>>,
     decoder: Mutex<Box<dyn ImageDecoder + Send>>,
     resizer: Mutex<Box<dyn Resizer + Send>>,
     encoder: Mutex<Box<dyn ImageEncoder + Send>>,
-    cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+    cache: Arc<RwLock<Box<dyn CacheEngine + Send + Sync>>>,
 }
 
 #[actix_web::main]
@@ -56,21 +56,20 @@ async fn main() -> std::io::Result<()> {
         }
     };
     let cache_engine = HashMapCacheEngine::default();
-    let mutex_cache_engine = Mutex::from(Box::from(cache_engine) as Box<dyn CacheEngine + Send>);
-    let cache = mutex_cache_engine;
-    let arc_cache = &*Box::leak(Box::new(Arc::new(cache)));
-
+    let mutex_cache_engine = RwLock::from(Box::from(cache_engine) as Box<dyn CacheEngine + Send + Sync>);
+    let arc_cache = Arc::new(mutex_cache_engine);
 
     HttpServer::new(move || {
-        let fetcher = ReqwestImageFetcher{
-            cache: &*arc_cache,
+        let c_arc_cache = arc_cache.clone();
+        let fetcher = ReqwestImageFetcher {
+            cache: c_arc_cache.clone(),
             config: config.clone(),
         };
-        let resizer = CachedResizer{
-            cache: &*arc_cache,
+        let resizer = CachedResizer {
+            cache: c_arc_cache.clone(),
         };
-        let encoder = AllInOneCachedImageEncoder{cache: &*arc_cache};
-        let decoder = CachedImageDecoder{cache: &*arc_cache};
+        let encoder = AllInOneCachedImageEncoder { cache: c_arc_cache.clone() };
+        let decoder = CachedImageDecoder { cache: c_arc_cache.clone() };
 
         let app_state = web::Data::new(AppState {
             config: Mutex::new(config.clone()),
@@ -78,7 +77,7 @@ async fn main() -> std::io::Result<()> {
             resizer: Mutex::new(Box::new(resizer)),
             encoder: Mutex::new(Box::new(encoder)),
             decoder: Mutex::new(Box::new(decoder)),
-            cache: &*arc_cache
+            cache: c_arc_cache.clone(),
         });
         App::new()
             .app_data(app_state.clone().clone())

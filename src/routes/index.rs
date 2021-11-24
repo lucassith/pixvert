@@ -8,11 +8,11 @@ use crate::encoder::OutputFormat;
 use crate::fetcher::FetchError;
 use crate::fetcher::HTTP_ADDITIONAL_DATA_HEADERS_KEY;
 
-pub async fn index(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+pub async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     return generate_image(req, data, false).await;
 }
 
-pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState<'_>>) -> HttpResponse {
+pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     return generate_image(req, data, true).await;
 }
 
@@ -23,11 +23,11 @@ impl From<FetchError> for HttpResponse {
             FetchError::NoAccess => HttpResponse::Forbidden().body(format!("{:#?}", e)),
             FetchError::InvalidFormat => HttpResponse::UnprocessableEntity().body(format!("{:#?}", e)),
             _ => HttpResponse::InternalServerError().body(format!("{:#?}", e)),
-        }
+        };
     }
 }
 
-pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, keep_ratio: bool) -> HttpResponse {
+pub async fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ratio: bool) -> HttpResponse {
     let resource_url = &req.match_info().get("tail").unwrap().to_string();
     let resource_uri = urlencoding::decode(resource_url).unwrap();
     let resource = match data
@@ -36,10 +36,9 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, kee
         .unwrap()
         .fetch(&resource_uri.to_string())
         .await {
-            Ok(r) => r,
-            Err(e) => return e.into(),
-        };
-
+        Ok(r) => r,
+        Err(e) => return e.into(),
+    };
 
 
     info!("Received image in format: {} - size: {}", &resource.content_type, size_of_val(&*resource.content.as_slice()));
@@ -49,9 +48,9 @@ pub async fn generate_image(req: HttpRequest, data: web::Data<AppState<'_>>, kee
         .get("format")
         .unwrap_or(resource.content_type.as_str())
         .parse::<OutputFormat>() {
-            Ok(f) => f,
-            Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.content_type.as_str()))),
-        };
+        Ok(f) => f,
+        Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.content_type.as_str()))),
+    };
 
 
     info!("Image will be converted to: {}", output_format);

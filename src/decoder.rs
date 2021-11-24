@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 
 use image_crate::{DynamicImage, ImageFormat};
 use image_crate::io::Reader as ImageReader;
@@ -18,15 +18,15 @@ pub enum DecodeError {
     MismatchedFormat,
 }
 
-pub struct CachedImageDecoder<'a> {
-    pub cache: &'a Mutex<Box<dyn CacheEngine + Send>>,
+pub struct CachedImageDecoder {
+    pub cache: Arc<RwLock<Box<dyn CacheEngine + Send + Sync>>>,
 }
 
-impl ImageDecoder for CachedImageDecoder<'_> {
+impl ImageDecoder for CachedImageDecoder {
     fn decode(&self, tag: &String, resource: Resource) -> Result<DynamicImage, DecodeError> {
         let tag = generate_resource_tag(&format!("Image Decoder {}", tag));
 
-        if let Some(dynamic_image_bytes) = self.cache.lock().unwrap().get(&tag) {
+        if let Some(dynamic_image_bytes) = self.cache.read().unwrap().get(&tag) {
             return Ok(bincode::deserialize::<Image>(&dynamic_image_bytes).unwrap().into());
         }
 
@@ -67,7 +67,7 @@ impl ImageDecoder for CachedImageDecoder<'_> {
             }
         }
 
-        self.cache.lock().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
+        self.cache.write().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
         return Ok(img);
     }
 }

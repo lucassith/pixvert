@@ -21,12 +21,12 @@ impl CacheEngine for NoCacheEngine {
 }
 
 pub struct HashMapCacheEngine {
-    hashmap: Mutex<HashMap<String, Vec<u8>>>
+    hashmap: Mutex<HashMap<String, Vec<u8>>>,
 }
 
 impl HashMapCacheEngine {
     pub fn new() -> Self {
-        HashMapCacheEngine{
+        HashMapCacheEngine {
             hashmap: Mutex::from(HashMap::default())
         }
     }
@@ -43,7 +43,7 @@ impl CacheEngine for HashMapCacheEngine {
         return match self.hashmap.lock().unwrap().get(name) {
             Some(value) => Some(value.clone()),
             None => None
-        }
+        };
     }
 
     fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error> {

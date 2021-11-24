@@ -10,7 +10,7 @@ use rand::distributions::Alphanumeric;
 use crate::cache::CacheEngine;
 
 pub struct FileCache {
-    dir: PathBuf
+    dir: PathBuf,
 }
 
 impl FileCache {
@@ -46,7 +46,7 @@ impl CacheEngine for FileCache {
             Err(_) => {
                 Option::None
             }
-        }
+        };
     }
 
     fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error> {
@@ -74,10 +74,10 @@ mod tests {
     fn file_cache_set() {
         let temp_path = tempfile::TempDir::new().unwrap().into_path();
         let cache_name = "unit-test";
-        let file_cache = FileCache{
+        let file_cache = FileCache {
             dir: temp_path.clone(),
         };
-        let data: Vec<u8> = Vec::from([0,0,0,8]);
+        let data: Vec<u8> = Vec::from([0, 0, 0, 8]);
         file_cache.set(cache_name, &data).unwrap();
         let content = fs::read(temp_path.join(FileCache::generate_file_name(cache_name))).unwrap();
         assert_eq!(data, content);
@@ -88,11 +88,11 @@ mod tests {
     fn file_cache_get() {
         let temp_path = tempfile::TempDir::new().unwrap().into_path();
         let cache_name = "unit-test";
-        let data: Vec<u8> = Vec::from([0,1,2,4,8,16,32]);
+        let data: Vec<u8> = Vec::from([0, 1, 2, 4, 8, 16, 32]);
         let file_name = FileCache::generate_file_name(cache_name);
         fs::write(temp_path.join(file_name), &data).unwrap();
 
-        let file_cache = FileCache{
+        let file_cache = FileCache {
             dir: temp_path.clone(),
         };
         let content = file_cache.get(cache_name).unwrap();
