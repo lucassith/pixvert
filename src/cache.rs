@@ -1,24 +1,53 @@
-use std::num::ParseIntError;
+use std::collections::HashMap;
+use std::io::Error;
+use std::sync::Mutex;
 
-pub mod memory_cache;
 pub mod file_cache;
 
-#[derive(Debug)]
-pub enum CacheError {
-    NoCacheEntry,
-    InvalidCacheEntry,
+pub trait CacheEngine {
+    fn get(&self, name: &str) -> Option<Vec<u8>>;
+    fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error>;
 }
 
-impl From<ParseIntError> for CacheError {
-    fn from(_: ParseIntError) -> Self {
-        Self::InvalidCacheEntry
+pub struct NoCacheEngine {}
+
+impl CacheEngine for NoCacheEngine {
+    fn get(&self, _: &str) -> Option<Vec<u8>> {
+        Option::None
+    }
+    fn set(&self, _: &str, _: &Vec<u8>) -> Result<bool, Error> {
+        Result::Ok(true)
     }
 }
 
-pub trait Cachable<T: Clone> {
-    fn get(&self, link: &String) -> Result<T, CacheError>;
-    fn set(&mut self, link: String, object: T) -> Result<bool, CacheError>;
-    fn delete(&mut self, link: &String) -> bool;
-    fn count(&self) -> usize;
+pub struct HashMapCacheEngine {
+    hashmap: Mutex<HashMap<String, Vec<u8>>>,
 }
 
+impl HashMapCacheEngine {
+    pub fn new() -> Self {
+        HashMapCacheEngine {
+            hashmap: Mutex::from(HashMap::default())
+        }
+    }
+}
+
+impl Default for HashMapCacheEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CacheEngine for HashMapCacheEngine {
+    fn get(&self, name: &str) -> Option<Vec<u8>> {
+        return match self.hashmap.lock().unwrap().get(name) {
+            Some(value) => Some(value.clone()),
+            None => None
+        };
+    }
+
+    fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error> {
+        self.hashmap.lock().unwrap().insert(name.to_string(), data.clone());
+        return Ok(true);
+    }
+}
