@@ -105,3 +105,4 @@ curl localhost:8080/100_400/webp/https%3A%2F%2Fvia.placeholder.com%2F150x100
 - [x] Configuration file.
 - [x] Implement JPEG-XL for encoding.
 - [x] Implement JPEG-XL for decoding.
+- [x] Maximum output file pixels

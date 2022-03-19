@@ -67,6 +67,7 @@ async fn main() -> std::io::Result<()> {
         };
         let resizer = CachedResizer {
             cache: c_arc_cache.clone(),
+            config: config.clone(),
         };
         let encoder = AllInOneCachedImageEncoder { cache: c_arc_cache.clone() };
         let decoder = CachedImageDecoder { cache: c_arc_cache.clone() };
@@ -92,7 +93,7 @@ async fn main() -> std::io::Result<()> {
     })
         .bind("0.0.0.0:8080")?
         .run()
-        .await;
+        .await?;
     std::fs::remove_dir_all("/tmp/pixvert_image_cache").unwrap_or_default();
     Result::Ok(())
 }

@@ -4,11 +4,10 @@ use std::sync::{Arc, RwLock};
 
 use actix_web::http;
 use actix_web::http::{header, HeaderValue};
-use async_trait::async_trait;
 use chrono;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use log::{debug, error};
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::{StatusCode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -24,9 +23,8 @@ pub fn generate_resource_tag(tag: &String) -> String {
     return format!("{:x}", md5::compute(tag));
 }
 
-#[async_trait]
 pub trait Fetcher<T> {
-    async fn fetch(&self, resource: &String) -> Result<T, FetchError>;
+    fn fetch(&self, resource: &String) -> Result<T, FetchError>;
 }
 
 pub struct ReqwestImageFetcher {
@@ -145,9 +143,8 @@ impl From<reqwest::Error> for FetchError {
     }
 }
 
-#[async_trait]
 impl Fetcher<Resource> for ReqwestImageFetcher {
-    async fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
+    fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
         match reqwest::Url::parse(resource.as_str()) {
             Ok(url) => {
                 if self.config.allow_from.len() > 0 {
@@ -177,25 +174,25 @@ impl Fetcher<Resource> for ReqwestImageFetcher {
                 }
             }
         }
-        let request_builder: RequestBuilder;
+        let request_builder: reqwest::blocking::RequestBuilder;
         if let Some(tagged_image) = &cache_element {
             request_builder = match Self::can_serve_cache(&tagged_image) {
                 CanServeCache::Yes => return Ok(tagged_image.object.clone()),
-                CanServeCache::MustReinvalidateETag(etag) => reqwest::Client::new().get(resource).header(
+                CanServeCache::MustReinvalidateETag(etag) => reqwest::blocking::Client::new().get(resource).header(
                     http::header::IF_NONE_MATCH.as_str(),
                     etag.as_str(),
                 ),
-                CanServeCache::MustReinvalidateByRequestTime(time) => reqwest::Client::new().get(resource).header(
+                CanServeCache::MustReinvalidateByRequestTime(time) => reqwest::blocking::Client::new().get(resource).header(
                     http::header::IF_MODIFIED_SINCE.as_str(),
                     time.format(CHRONO_HTTP_DATE_FORMAT).to_string().as_str(),
                 ),
-                CanServeCache::No => reqwest::Client::new().get(resource),
+                CanServeCache::No => reqwest::blocking::Client::new().get(resource),
             };
         } else {
-            request_builder = reqwest::Client::new().get(resource);
+            request_builder = reqwest::blocking::Client::new().get(resource);
         }
         let response_time: String = Utc::now().to_rfc3339();
-        let response = request_builder.send().await?;
+        let response = request_builder.send()?;
         match response.status() {
             code if code.is_client_error() => return Err(FetchError::NotFound),
             code if code.is_server_error() => return Err(FetchError::NotAvailable),
@@ -222,7 +219,7 @@ impl Fetcher<Resource> for ReqwestImageFetcher {
                 let resource = TaggedElement {
                     object: Resource {
                         content_type,
-                        content: response.bytes().await.unwrap().to_vec(),
+                        content: response.bytes()?.to_vec(),
                         id: Uuid::new_v4().to_string(),
                         additional_data: HashMap::from([(
                             String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
@@ -321,7 +318,7 @@ mod tests {
                 .body(mock_body.clone());
         });
         let resource_url = format!("http://{}:{}/image.png", server.host(), server.port());
-        fetcher.fetch(&resource_url).await.ok().unwrap();
+        fetcher.fetch(&resource_url).ok().unwrap();
         let cache_value = cache.lock().unwrap().get(generate_resource_tag(&resource_url).as_str());
         let tagged_resource: TaggedElement<Resource> = bincode::deserialize(&cache_value.unwrap()).unwrap();
         assert_eq!(tagged_resource.object.content, mock_body)

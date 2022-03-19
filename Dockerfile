@@ -1,4 +1,4 @@
-FROM rust:1.56.1-slim-bullseye as build
+FROM rust:1.59.0-slim-bullseye as build
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
@@ -22,7 +22,7 @@ COPY ./src ./src
 RUN rm ./target/release/deps/pixvert_rs*
 RUN cargo build --release
 
-FROM rust:1.56.1-slim
+FROM rust:1.59.0-slim-bullseye
 
 RUN apt-get update && apt-get install -y \
     curl \

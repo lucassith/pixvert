@@ -30,7 +30,7 @@ impl ImageDecoder for CachedImageDecoder {
             return Ok(bincode::deserialize::<Image>(&dynamic_image_bytes).unwrap().into());
         }
 
-        let mut img: DynamicImage;
+        let img: DynamicImage;
 
         if resource.content_type.as_str() == "image/webp" {
             let decoder = webp::Decoder::new(resource.content.as_slice());

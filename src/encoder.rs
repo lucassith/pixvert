@@ -112,7 +112,6 @@ impl From<ParseFloatError> for ParseError {
 #[derive(Debug)]
 pub enum EncodingError {
     JpegXlEncodeError(String),
-    Unknown(String),
 }
 
 impl From<JpegXlEncodeError> for EncodingError {
@@ -181,12 +180,12 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
                 content_type = String::from("image/jxl");
             }
             OutputFormat::WebpLoseless => {
-                let mut encoder = webp::Encoder::from_image(&resource).unwrap();
+                let encoder = webp::Encoder::from_image(&resource).unwrap();
                 image = encoder.encode_lossless().to_vec();
                 content_type = String::from("image/webp")
             }
             OutputFormat::Webp(quality) => {
-                let mut encoder = webp::Encoder::from_image(&resource).unwrap();
+                let encoder = webp::Encoder::from_image(&resource).unwrap();
                 image = encoder.encode(quality).to_vec();
                 content_type = String::from("image/webp")
             }
