@@ -4,7 +4,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use image_crate::{DynamicImage, GenericImageView, ImageOutputFormat};
+use image_crate::{DynamicImage, ImageOutputFormat};
 use jpegxl_rs::encode::{EncoderResult, EncoderSpeed, JxlEncoder};
 use jpegxl_rs::EncodeError as JpegXlEncodeError;
 use jpegxl_rs::encoder_builder;

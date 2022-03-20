@@ -1,14 +1,14 @@
 use std::collections::HashMap;
+use std::io::Read;
 use std::ops::Add;
 use std::sync::{Arc, RwLock};
 
 use actix_web::http;
-use actix_web::http::{header, HeaderValue, StatusCode};
+use actix_web::http::{header, StatusCode};
 use chrono;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
-use log::{debug, error};
+use log::debug;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 use url::Url;
 use uuid::Uuid;
 
@@ -209,7 +209,7 @@ impl Fetcher<Resource> for HttpImageFetcher {
                     http_hashmap.insert(String::from(header::EXPIRES.to_string()), expire_string);
                 }
                 let mut content = Vec::new();
-                response.into_reader().read_to_end(&mut content);
+                response.into_reader().read_to_end(&mut content).unwrap();
                 let resource = TaggedElement {
                     object: Resource {
                         content_type,
@@ -262,7 +262,7 @@ mod tests {
 
     use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
     use crate::config::Config as ApplicationConfig;
-    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, REQUEST_TIME_KEY, HttpImageFetcher, Resource};
+    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, HttpImageFetcher, REQUEST_TIME_KEY, Resource};
     use crate::tagged_element::TaggedElement;
 
     fn init() {

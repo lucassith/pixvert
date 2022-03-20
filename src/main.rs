@@ -43,7 +43,7 @@ async fn main() -> std::io::Result<()> {
         .merge(Yaml::file("app.yml"))
         .extract() {
         Ok(c) => c,
-        Err(err) => {
+        Err(_) => {
             let file = match OpenOptions::new().create_new(true).write(true).read(true).open(
                 "app.yml"
             ) {

@@ -1,4 +1,4 @@
-use image_crate::{DynamicImage, GenericImageView, RgbaImage};
+use image_crate::{DynamicImage, RgbaImage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

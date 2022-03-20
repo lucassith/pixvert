@@ -4,10 +4,10 @@ use image_crate::DynamicImage;
 use image_crate::imageops::FilterType;
 
 use crate::cache::CacheEngine;
+use crate::config::Config;
 use crate::fetcher::generate_resource_tag;
 use crate::image::Image;
-use crate::config::Config;
-use crate::resizer::ResizeError::{ResizeExceedsMaximumSize};
+use crate::resizer::ResizeError::ResizeExceedsMaximumSize;
 
 pub trait Resizer {
     fn resize(
