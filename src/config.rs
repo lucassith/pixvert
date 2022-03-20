@@ -2,9 +2,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
+pub enum CacheType {
+    InMemory,
+    File(String),
+}
+
+#[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct OverriddenCache {
     pub domain: String,
     pub cache_control: String,
+}
+
+#[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationCache {
+    pub cache_type: CacheType,
 }
 
 #[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
@@ -13,6 +26,8 @@ pub struct Config {
     pub allow_from: Vec<String>,
     pub overridden_cache: Vec<OverriddenCache>,
     pub maximum_image_size: usize,
+    pub cache: ApplicationCache,
+
 }
 
 impl Default for Config {
@@ -28,6 +43,7 @@ impl Default for Config {
                     }
                 ]
             ),
+            cache: ApplicationCache{ cache_type:CacheType::InMemory }
         }
     }
 }

@@ -3,12 +3,13 @@ use std::ops::Add;
 use std::sync::{Arc, RwLock};
 
 use actix_web::http;
-use actix_web::http::{header, HeaderValue};
+use actix_web::http::{header, HeaderValue, StatusCode};
 use chrono;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use log::{debug, error};
-use reqwest::{StatusCode};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use url::Url;
 use uuid::Uuid;
 
 use crate::cache::CacheEngine;
@@ -27,7 +28,7 @@ pub trait Fetcher<T> {
     fn fetch(&self, resource: &String) -> Result<T, FetchError>;
 }
 
-pub struct ReqwestImageFetcher {
+pub struct HttpImageFetcher {
     pub cache: Arc<RwLock<Box<dyn CacheEngine + Send + Sync>>>,
     pub config: Config,
 }
@@ -54,7 +55,7 @@ pub enum CanServeCache {
     No,
 }
 
-impl ReqwestImageFetcher {
+impl HttpImageFetcher {
     pub fn can_serve_cache(resource: &TaggedElement<Resource>) -> CanServeCache {
         if let Some(cache_control_header) = resource.cache_data.get(header::CACHE_CONTROL.as_str()) {
             let cc = cache_control::CacheControl::from_value(cache_control_header).unwrap();
@@ -98,30 +99,20 @@ impl ReqwestImageFetcher {
         return CanServeCache::No;
     }
 
-    fn insert_request_cache_data(cache_data: &mut HashMap<String, String>, header_name: String, header_value: Option<&HeaderValue>) {
+    fn insert_request_cache_data(cache_data: &mut HashMap<String, String>, header_name: String, header_value: Option<&str>) {
         if let Some(header_value) = header_value {
-            if let Ok(header_value) = header_value.to_str() {
-                cache_data.insert(header_name, header_value.to_string());
-            }
+            cache_data.insert(header_name, header_value.to_string());
         }
     }
 
-    fn get_cache_control(&self, resource: &String, header: Option<&HeaderValue>) -> String {
+    fn get_cache_control(&self, resource: &String, header: Option<&str>) -> String {
         for overriden_cache in &self.config.overridden_cache {
             if resource.contains(&overriden_cache.domain) {
                 return overriden_cache.cache_control.clone();
             }
         }
         if let Some(header_value) = header {
-            return match header_value.to_str() {
-                Ok(cache_control) => {
-                    cache_control.to_string()
-                }
-                Err(e) => {
-                    error!("{}", e);
-                    String::from("")
-                }
-            };
+            return header_value.to_string()
         }
         String::from("")
     }
@@ -137,15 +128,16 @@ pub enum FetchError {
     Unknown(String),
 }
 
-impl From<reqwest::Error> for FetchError {
-    fn from(err: reqwest::Error) -> FetchError {
+impl From<ureq::Error> for FetchError {
+    fn from(err: ureq::Error) -> FetchError {
         return FetchError::Unknown(String::from(format!("Unknown Reqwest error. {}", err)));
     }
 }
 
-impl Fetcher<Resource> for ReqwestImageFetcher {
+impl Fetcher<Resource> for HttpImageFetcher {
     fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
-        match reqwest::Url::parse(resource.as_str()) {
+
+        match Url::parse(resource.as_str()) {
             Ok(url) => {
                 if self.config.allow_from.len() > 0 {
                     if let Some(host) = url.host() {
@@ -174,39 +166,39 @@ impl Fetcher<Resource> for ReqwestImageFetcher {
                 }
             }
         }
-        let request_builder: reqwest::blocking::RequestBuilder;
+        let request_builder: ureq::Request;
         if let Some(tagged_image) = &cache_element {
             request_builder = match Self::can_serve_cache(&tagged_image) {
                 CanServeCache::Yes => return Ok(tagged_image.object.clone()),
-                CanServeCache::MustReinvalidateETag(etag) => reqwest::blocking::Client::new().get(resource).header(
+                CanServeCache::MustReinvalidateETag(etag) => ureq::get(resource.as_str()).set(
                     http::header::IF_NONE_MATCH.as_str(),
-                    etag.as_str(),
+                    etag.as_str()
                 ),
-                CanServeCache::MustReinvalidateByRequestTime(time) => reqwest::blocking::Client::new().get(resource).header(
+                CanServeCache::MustReinvalidateByRequestTime(time) => ureq::get(resource).set(
                     http::header::IF_MODIFIED_SINCE.as_str(),
                     time.format(CHRONO_HTTP_DATE_FORMAT).to_string().as_str(),
                 ),
-                CanServeCache::No => reqwest::blocking::Client::new().get(resource),
+                CanServeCache::No => ureq::get(resource),
             };
         } else {
-            request_builder = reqwest::blocking::Client::new().get(resource);
+            request_builder = ureq::get(resource);
         }
         let response_time: String = Utc::now().to_rfc3339();
-        let response = request_builder.send()?;
+        let response = request_builder.call().unwrap();
         match response.status() {
-            code if code.is_client_error() => return Err(FetchError::NotFound),
-            code if code.is_server_error() => return Err(FetchError::NotAvailable),
+            code if code >= 400 && code < 500 => return Err(FetchError::NotFound),
+            code if code >= 500 && code < 600 => return Err(FetchError::NotAvailable),
             code if code == StatusCode::OK => {
                 let mut cache_data: HashMap<String, String> = HashMap::new();
-                let content_type = match response.headers().get(http::header::CONTENT_TYPE.as_str()) {
-                    Some(content_type) => String::from(content_type.to_str().unwrap_or(mime::OCTET_STREAM.as_str())),
-                    None => mime::OCTET_STREAM.to_string(),
-                };
-                let cache_control = self.get_cache_control(resource, response.headers().get(http::header::CACHE_CONTROL.as_str()));
-                Self::insert_request_cache_data(&mut cache_data, REQUEST_TIME_KEY.to_string(), Some(&HeaderValue::from_str(response_time.as_str()).unwrap()));
-                Self::insert_request_cache_data(&mut cache_data, http::header::ETAG.to_string(), response.headers().get(http::header::ETAG));
-                Self::insert_request_cache_data(&mut cache_data, http::header::EXPIRES.to_string(), response.headers().get(http::header::EXPIRES));
-                Self::insert_request_cache_data(&mut cache_data, http::header::CACHE_CONTROL.to_string(), Some(&HeaderValue::from_str(cache_control.as_str()).unwrap()));
+                let content_type = match response.header(http::header::CONTENT_TYPE.as_str()) {
+                    Some(content_type) => content_type,
+                    None => mime::OCTET_STREAM.as_str(),
+                }.to_string();
+                let cache_control = self.get_cache_control(resource, response.header(http::header::CACHE_CONTROL.as_str()));
+                Self::insert_request_cache_data(&mut cache_data, REQUEST_TIME_KEY.to_string(), Some(response_time.as_str()));
+                Self::insert_request_cache_data(&mut cache_data, http::header::ETAG.to_string(), response.header(http::header::ETAG.as_str()));
+                Self::insert_request_cache_data(&mut cache_data, http::header::EXPIRES.to_string(), response.header(http::header::EXPIRES.as_str()));
+                Self::insert_request_cache_data(&mut cache_data, http::header::CACHE_CONTROL.to_string(), Some(cache_control.as_str()));
                 let mut http_hashmap: HashMap<String, String> = HashMap::default();
                 let cache_control_string = String::from(&cache_control);
                 if !cache_control_string.is_empty() {
@@ -216,10 +208,12 @@ impl Fetcher<Resource> for ReqwestImageFetcher {
                 if !expire_string.is_empty() {
                     http_hashmap.insert(String::from(header::EXPIRES.to_string()), expire_string);
                 }
+                let mut content = Vec::new();
+                response.into_reader().read_to_end(&mut content);
                 let resource = TaggedElement {
                     object: Resource {
                         content_type,
-                        content: response.bytes()?.to_vec(),
+                        content,
                         id: Uuid::new_v4().to_string(),
                         additional_data: HashMap::from([(
                             String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
@@ -268,7 +262,7 @@ mod tests {
 
     use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
     use crate::config::Config as ApplicationConfig;
-    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, REQUEST_TIME_KEY, ReqwestImageFetcher, Resource};
+    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, REQUEST_TIME_KEY, HttpImageFetcher, Resource};
     use crate::tagged_element::TaggedElement;
 
     fn init() {
@@ -286,7 +280,7 @@ mod tests {
     #[actix_rt::test]
     async fn test_get_new_resource() {
         let cache = Mutex::from(Box::from(NoCacheEngine {}) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher { cache: &cache, config: ApplicationConfig::default() };
+        let fetcher = HttpImageFetcher { cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
         let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
 
@@ -306,7 +300,7 @@ mod tests {
     async fn test_should_set_cache_value() {
         let hashmap = HashMapCacheEngine::default();
         let cache = Mutex::from(Box::from(hashmap) as Box<dyn CacheEngine + Send>);
-        let fetcher = ReqwestImageFetcher { cache: &cache, config: ApplicationConfig::default() };
+        let fetcher = HttpImageFetcher { cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
         let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
 
@@ -326,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_no_cache_if_no_headers() {
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data: HashMap::default(),
         });
@@ -337,7 +331,7 @@ mod tests {
     fn test_can_serve_cache_immutable() {
         let mut cache_data = HashMap::default();
         cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("immutable"));
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -348,7 +342,7 @@ mod tests {
     fn test_no_cache_if_no_store() {
         let mut cache_data = HashMap::default();
         cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("no-store"));
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -360,7 +354,7 @@ mod tests {
         let mut cache_data = HashMap::default();
         cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
         cache_data.insert(REQUEST_TIME_KEY.to_string(), Utc::now().sub(Duration::seconds(59)).to_rfc3339());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -374,7 +368,7 @@ mod tests {
         let request_time = Utc::now().sub(Duration::seconds(60));
         cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
         cache_data.insert(REQUEST_TIME_KEY.to_string(), request_time.to_rfc3339());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -390,7 +384,7 @@ mod tests {
         cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
         cache_data.insert(header::ETAG.to_string(), etag.to_string());
         cache_data.insert(REQUEST_TIME_KEY.to_string(), request_time.to_rfc3339());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -403,7 +397,7 @@ mod tests {
         let mut cache_data = HashMap::default();
         let request_time = Utc::now().add(Duration::seconds(10));
         cache_data.insert(header::EXPIRES.to_string(), request_time.format(CHRONO_HTTP_DATE_FORMAT).to_string());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -416,7 +410,7 @@ mod tests {
         let mut cache_data = HashMap::default();
         let request_time = Utc::now().sub(Duration::seconds(10));
         cache_data.insert(header::EXPIRES.to_string(), request_time.format(CHRONO_HTTP_DATE_FORMAT).to_string());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -429,7 +423,7 @@ mod tests {
         let mut cache_data = HashMap::default();
         let etag = "W/38271";
         cache_data.insert(header::ETAG.to_string(), etag.to_string());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });
@@ -442,7 +436,7 @@ mod tests {
         let mut cache_data = HashMap::default();
         let request_date = Utc::now().sub(Duration::seconds(59));
         cache_data.insert(REQUEST_TIME_KEY.to_string(), request_date.to_rfc3339());
-        let can_serve = ReqwestImageFetcher::can_serve_cache(&TaggedElement {
+        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
             object: Resource::default(),
             cache_data,
         });

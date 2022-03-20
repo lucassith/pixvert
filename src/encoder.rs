@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::io::Cursor;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -59,7 +60,7 @@ impl FromStr for OutputFormat {
             return if quality != "" {
                 let quality_f32: f32 = quality.parse()?;
                 if quality_f32 > 100.0 {
-                    return Err(ParseError::QualityOutOfRange(String::from("JpegXL must be between 0 (worst) to 100 (best)")));
+                    return Err(ParseError::QualityOutOfRange(String::from("WebP must be between 0 (best) to 100 (best)")));
                 }
                 Ok(OutputFormat::Webp(quality_f32))
             } else {
@@ -70,7 +71,7 @@ impl FromStr for OutputFormat {
         if s == "image/png" { return Ok(OutputFormat::Png); }
         if s == "image/bmp" { return Ok(OutputFormat::Bmp); }
         if s == "image/jpeg" { return Ok(OutputFormat::Jpeg(90)); }
-        if s == "image/jpegxl" { return Ok(OutputFormat::JpegXl(90f32)); }
+        if s == "image/jpegxl" { return Ok(OutputFormat::JpegXl(10f32)); }
         return Err(ParseError::InvalidFormat(s.to_string()));
     }
 }
@@ -147,15 +148,15 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
 
         match output_format {
             OutputFormat::Jpeg(quality) => {
-                resource.write_to(&mut image, ImageOutputFormat::Jpeg(quality));
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Jpeg(quality));
                 content_type = mime::IMAGE_JPEG.to_string();
             }
             OutputFormat::Png => {
-                resource.write_to(&mut image, ImageOutputFormat::Png);
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Png);
                 content_type = mime::IMAGE_PNG.to_string();
             }
             OutputFormat::Bmp => {
-                resource.write_to(&mut image, ImageOutputFormat::Bmp);
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Bmp);
                 content_type = mime::IMAGE_BMP.to_string();
             }
             OutputFormat::JpegXl(quality) => {
