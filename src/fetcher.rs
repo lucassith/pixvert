@@ -250,7 +250,7 @@ impl Fetcher<Resource> for HttpImageFetcher {
 mod tests {
     use std::collections::HashMap;
     use std::ops::{Add, Sub};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, RwLock};
 
     use actix_web::http::header;
     use chrono::{Duration, Utc};
@@ -279,7 +279,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_get_new_resource() {
-        let cache = Mutex::from(Box::from(NoCacheEngine {}) as Box<dyn CacheEngine + Send>);
+        let cache = RwLock::from(Box::from(NoCacheEngine {}) as Box<dyn CacheEngine + Send>);
         let fetcher = HttpImageFetcher { cache: &cache, config: ApplicationConfig::default() };
         let server = MockServer::start();
         let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
