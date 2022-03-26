@@ -7,7 +7,7 @@ use actix_web::{http, HttpResponse, HttpResponseBuilder};
 use actix_web::http::{header, StatusCode};
 use chrono;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
-use log::debug;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -160,9 +160,10 @@ impl Fetcher<Resource> for HttpImageFetcher {
                 if !self.config.allow_from.is_empty() {
                     if let Some(host) = url.host() {
                         let allowed_hosts = self.config.allow_from.clone();
-                        if allowed_hosts.into_iter().any(|allowed_host| -> bool {
+                        if !allowed_hosts.into_iter().any(|allowed_host| -> bool {
                             host.to_string().as_str().ends_with(allowed_host.as_str())
                         }) {
+                            error!("Host {} is not on the list {:#?}", host, self.config.allow_from.clone());
                             return Err(FetchError::NoAccess);
                         }
                     } else {
