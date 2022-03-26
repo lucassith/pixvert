@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Image {
+    #[serde(with = "serde_bytes")]
     pub image: Vec<u8>,
     pub width: u32,
     pub height: u32,

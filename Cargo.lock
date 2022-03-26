@@ -2034,6 +2034,7 @@ dependencies = [
  "mime",
  "rand",
  "serde",
+ "serde_bytes",
  "serde_yaml",
  "tempfile",
  "ureq",
@@ -2392,6 +2393,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float",
+ "serde",
+]
+
+[[package]]
+name = "serde_bytes"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16ae07dd2f88a366f15bd0632ba725227018c69a1c8550a927324f8eb8368bb9"
+dependencies = [
  "serde",
 ]
 
