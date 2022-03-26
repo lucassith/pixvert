@@ -1,12 +1,11 @@
 use std::mem::size_of_val;
 
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, web};
-use log::info;
+use log::{debug, info};
 
 use crate::AppState;
 use crate::encoder::OutputFormat;
 use crate::fetcher::FetchError;
-use crate::fetcher::HTTP_ADDITIONAL_DATA_HEADERS_KEY;
 use crate::output_dimensions::OutputDimensions;
 use crate::resizer::ResizeError;
 
@@ -39,17 +38,18 @@ pub fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ratio: b
         let output_format = match req
             .match_info()
             .get("format")
-            .unwrap_or(response_data.content_type.as_str())
+            .unwrap_or_else(|| response_data.content_type.as_str())
             .parse::<OutputFormat>() {
             Ok(f) => f,
-            Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(response_data.content_type.as_str()))),
+            Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or_else(|| response_data.content_type.as_str()))),
         };
-
+        debug!("Fetcher allowed to serve cache {:?}", response_data);
         if let Some(encoded_image) = data.encoder.lock().unwrap().serve_cache(
             &response_data.id,
             &output_dimensions,
             output_format
         ) {
+
             let mut response: HttpResponseBuilder = response_data.into();
             return response.content_type(encoded_image.content_type).body(encoded_image.image);
         }
@@ -68,10 +68,10 @@ pub fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ratio: b
     let output_format = match req
         .match_info()
         .get("format")
-        .unwrap_or(resource.response_data.content_type.as_str())
+        .unwrap_or_else(|| resource.response_data.content_type.as_str())
         .parse::<OutputFormat>() {
         Ok(f) => f,
-        Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or(resource.response_data.content_type.as_str()))),
+        Err(_) => return HttpResponse::UnprocessableEntity().body(format!("Invalid format: {}", req.match_info().get("format").unwrap_or_else(|| resource.response_data.content_type.as_str()))),
     };
 
     info!("Image will be converted to: {}", output_format);
@@ -83,7 +83,7 @@ pub fn generate_image(req: HttpRequest, data: web::Data<AppState>, keep_ratio: b
         }
     };
 
-    let resized_image_result = match output_dimensions.clone() {
+    let resized_image_result = match output_dimensions {
         OutputDimensions::Original => {
             Result::Ok(img)
         }

@@ -68,9 +68,9 @@ impl Resizer for CachedResizer {
         let image = resize(resource, dimensions, self.config.maximum_image_size, false)?;
         let binary_image = bincode::serialize::<Image>(&image.clone().into()).unwrap();
         {
-            self.cache.write().unwrap().set(tag.as_str(), &binary_image);
+            self.cache.write().unwrap().set(tag.as_str(), &binary_image).unwrap();
         }
-        return Ok(image);
+        Ok(image)
     }
 
     fn resize_exact(&self, tag: &String, resource: DynamicImage, dimensions: (usize, usize)) -> Result<DynamicImage, ResizeError> {
@@ -87,9 +87,9 @@ impl Resizer for CachedResizer {
         let image = resize(resource, dimensions, self.config.maximum_image_size, true)?;
         let binary_image = bincode::serialize::<Image>(&image.clone().into()).unwrap();
         {
-            self.cache.write().unwrap().set(tag.as_str(), &binary_image);
+            self.cache.write().unwrap().set(tag.as_str(), &binary_image).unwrap();
         }
-        return Ok(image);
+        Ok(image)
     }
 }
 

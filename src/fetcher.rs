@@ -44,6 +44,7 @@ pub struct HttpImageFetcher {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Resource {
     pub response_data: ResponseData,
+    #[serde(with = "serde_bytes")]
     pub content: Vec<u8>,
 }
 

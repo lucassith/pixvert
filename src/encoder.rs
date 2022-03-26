@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, Write, write};
+use std::fmt::{Display, Formatter};
 use std::io::Cursor;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;

@@ -67,7 +67,7 @@ impl ImageDecoder for CachedImageDecoder {
             }
         }
 
-        self.cache.write().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
+        self.cache.write().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap()).unwrap();
         Ok(img)
     }
 }
