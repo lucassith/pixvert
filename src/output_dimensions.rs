@@ -27,9 +27,9 @@ impl From<(&str, &str, bool)> for OutputDimensions {
         if let Result::Ok(x) = possible_dimensions.0.parse::<usize>() {
             if let Result::Ok(y) = possible_dimensions.1.parse::<usize>() {
                 if possible_dimensions.2 {
-                    return OutputDimensions::ScaledExact(x,y);
+                    return OutputDimensions::ScaledWithRatio(x,y);
                 }
-                return OutputDimensions::ScaledWithRatio(x,y);
+                return OutputDimensions::ScaledExact(x,y);
             }
         }
         OutputDimensions::Original
