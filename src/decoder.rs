@@ -9,7 +9,7 @@ use crate::fetcher::{generate_resource_tag, Resource};
 use crate::image::Image;
 
 pub trait ImageDecoder {
-    fn decode(&self, tag: &String, resource: Resource) -> Result<DynamicImage, DecodeError>;
+    fn decode(&self, tag: &str, resource: &Resource) -> Result<DynamicImage, DecodeError>;
 }
 
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub struct CachedImageDecoder {
 }
 
 impl ImageDecoder for CachedImageDecoder {
-    fn decode(&self, tag: &String, resource: Resource) -> Result<DynamicImage, DecodeError> {
+    fn decode(&self, tag: &str, resource: &Resource) -> Result<DynamicImage, DecodeError> {
         let tag = generate_resource_tag(&format!("Image Decoder {}", tag));
 
         if let Some(dynamic_image_bytes) = self.cache.read().unwrap().get(&tag) {
@@ -32,7 +32,7 @@ impl ImageDecoder for CachedImageDecoder {
 
         let img: DynamicImage;
 
-        if resource.content_type.as_str() == "image/webp" {
+        if resource.response_data.content_type.as_str() == "image/webp" {
             let decoder = webp::Decoder::new(resource.content.as_slice());
             img = match decoder.decode() {
                 Some(image) => image.to_image(),
@@ -40,9 +40,9 @@ impl ImageDecoder for CachedImageDecoder {
             };
         } else {
             let mut reader = ImageReader::new(Cursor::new(
-                resource.content
+                resource.content.clone()
             ));
-            match resource.content_type.as_str() {
+            match resource.response_data.content_type.as_str() {
                 "image/jpeg" => {
                     reader.set_format(ImageFormat::Jpeg);
                 }
@@ -63,11 +63,11 @@ impl ImageDecoder for CachedImageDecoder {
             if let Ok(image) = reader.decode() {
                 img = image;
             } else {
-                return Err(DecodeError::UnknownFormat(resource.content_type.clone()));
+                return Err(DecodeError::UnknownFormat(resource.response_data.content_type.clone()));
             }
         }
 
         self.cache.write().unwrap().set(&tag, &bincode::serialize::<Image>(&img.clone().into()).unwrap());
-        return Ok(img);
+        Ok(img)
     }
 }

@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write, write};
 use std::io::Cursor;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheEngine;
 use crate::fetcher::generate_resource_tag;
+use crate::output_dimensions::OutputDimensions;
 
 #[derive(Debug)]
 pub enum OutputFormat {
@@ -24,6 +25,7 @@ pub enum OutputFormat {
     Webp(f32),
     Bmp,
 }
+
 
 impl FromStr for OutputFormat {
     type Err = ParseError;
@@ -128,7 +130,8 @@ pub struct EncodedImage {
 }
 
 pub trait ImageEncoder {
-    fn encode(&self, tag: &String, resource: DynamicImage, output_format: OutputFormat) -> Result<EncodedImage, EncodingError>;
+    fn serve_cache(&self, tag: &String, dimensions: &OutputDimensions, output_format: OutputFormat) -> Option<EncodedImage>;
+    fn encode(&self, tag: &String, resource: DynamicImage, dimensions: &OutputDimensions, output_format: OutputFormat) -> Result<EncodedImage, EncodingError>;
 }
 
 pub struct AllInOneCachedImageEncoder {
@@ -136,11 +139,21 @@ pub struct AllInOneCachedImageEncoder {
 }
 
 impl ImageEncoder for AllInOneCachedImageEncoder {
-    fn encode(&self, tag: &String, resource: DynamicImage, output_format: OutputFormat) -> Result<EncodedImage, EncodingError> {
+    fn serve_cache(&self, tag: &String, dimensions: &OutputDimensions, output_format: OutputFormat) -> Option<EncodedImage> {
+        let tag = generate_resource_tag(&format!("{} - {} {}", tag, output_format, dimensions));
+        if let Some(cached_encoded_image) = self.cache.read().unwrap().get(&tag) {
+            info!("Serving {} {} from cache.", tag, output_format);
+            return Option::Some(bincode::deserialize(cached_encoded_image.as_slice()).unwrap());
+        }
+        Option::None
+    }
+
+
+    fn encode(&self, tag: &String, resource: DynamicImage, dimensions: &OutputDimensions, output_format: OutputFormat) -> Result<EncodedImage, EncodingError> {
         let mut image: Vec<u8> = Vec::default();
         let content_type: String;
 
-        let tag = generate_resource_tag(&format!("{} - {} {}x{}", tag, output_format, resource.width(), resource.height()));
+        let tag = generate_resource_tag(&format!("{} - {} {}", tag, output_format, dimensions));
         if let Some(cached_encoded_image) = self.cache.read().unwrap().get(&tag) {
             info!("Serving {} {} from cache.", tag, output_format);
             return Ok(bincode::deserialize(cached_encoded_image.as_slice()).unwrap());
@@ -148,15 +161,15 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
 
         match output_format {
             OutputFormat::Jpeg(quality) => {
-                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Jpeg(quality));
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Jpeg(quality)).unwrap();
                 content_type = mime::IMAGE_JPEG.to_string();
             }
             OutputFormat::Png => {
-                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Png);
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Png).unwrap();
                 content_type = mime::IMAGE_PNG.to_string();
             }
             OutputFormat::Bmp => {
-                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Bmp);
+                resource.write_to(&mut Cursor::new(&mut image), ImageOutputFormat::Bmp).unwrap();
                 content_type = mime::IMAGE_BMP.to_string();
             }
             OutputFormat::JpegXl(quality) => {
@@ -166,7 +179,7 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
                     .build()?;
                 encoder.lossless = false;
                 encoder.quality = quality;
-                let result: EncoderResult<u8> = encoder.encode(&resource.as_bytes(), resource.width(), resource.height()).unwrap();
+                let result: EncoderResult<u8> = encoder.encode(resource.as_bytes(), resource.width(), resource.height()).unwrap();
                 image = result.data;
                 content_type = String::from("image/jxl");
             }
@@ -176,7 +189,7 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
                     .speed(EncoderSpeed::Tortoise)
                     .build()?;
                 encoder.lossless = true;
-                let result: EncoderResult<u8> = encoder.encode(&resource.as_bytes(), resource.width(), resource.height()).unwrap();
+                let result: EncoderResult<u8> = encoder.encode(resource.as_bytes(), resource.width(), resource.height()).unwrap();
                 image = result.data;
                 content_type = String::from("image/jxl");
             }
@@ -197,8 +210,8 @@ impl ImageEncoder for AllInOneCachedImageEncoder {
         };
 
         info!("Saving {} {} to cache.", tag, output_format);
-        self.cache.write().unwrap().set(&tag, &bincode::serialize(&encoded_image.clone()).unwrap());
+        self.cache.write().unwrap().set(&tag, &bincode::serialize(&encoded_image.clone()).unwrap()).unwrap();
 
-        return Ok(encoded_image);
+        Ok(encoded_image)
     }
 }

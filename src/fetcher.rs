@@ -3,7 +3,7 @@ use std::io::Read;
 use std::ops::Add;
 use std::sync::{Arc, RwLock};
 
-use actix_web::http;
+use actix_web::{http, HttpResponse, HttpResponseBuilder};
 use actix_web::http::{header, StatusCode};
 use chrono;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
@@ -20,12 +20,20 @@ pub(super) const REQUEST_TIME_KEY: &str = "REQUEST_RECEIVED_AT";
 pub(super) const CHRONO_HTTP_DATE_FORMAT: &str = "%a, %d %b %Y %H:%M:%S GMT";
 pub const HTTP_ADDITIONAL_DATA_HEADERS_KEY: &str = "http_headers";
 
-pub fn generate_resource_tag(tag: &String) -> String {
+pub fn generate_resource_tag(tag: &str) -> String {
     return format!("{:x}", md5::compute(tag));
 }
 
 pub trait Fetcher<T> {
-    fn fetch(&self, resource: &String) -> Result<T, FetchError>;
+    fn fetch(&self, resource: &str) -> Result<T, FetchError>;
+    fn serve_cache(&self, resource: &str) -> Option<ResponseData>;
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ResponseData {
+    pub id: String,
+    pub content_type: String,
+    pub additional_data: HashMap<String, HashMap<String, String>>,
 }
 
 pub struct HttpImageFetcher {
@@ -35,15 +43,25 @@ pub struct HttpImageFetcher {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Resource {
-    pub content_type: String,
-    pub additional_data: HashMap<String, HashMap<String, String>>,
-    pub id: String,
+    pub response_data: ResponseData,
     pub content: Vec<u8>,
+}
+
+impl Into<HttpResponseBuilder> for ResponseData {
+    fn into(self) -> HttpResponseBuilder {
+        let mut response = HttpResponse::Ok();
+        if let Some(http_additional_data) = self.additional_data.get(HTTP_ADDITIONAL_DATA_HEADERS_KEY) {
+            for (header_name, header_value) in http_additional_data.into_iter() {
+                response.insert_header((header_name.clone(), header_value.clone()));
+            }
+        }
+        return response;
+    }
 }
 
 impl Default for Resource {
     fn default() -> Self {
-        Self { content: Vec::default(), additional_data: HashMap::default(), id: Uuid::new_v4().to_string(), content_type: String::from("") }
+        Self { content: Vec::default(), response_data: ResponseData{ additional_data: HashMap::default(), id: Uuid::new_v4().to_string(), content_type: String::from("") } }
     }
 }
 
@@ -96,7 +114,7 @@ impl HttpImageFetcher {
         if let Some(request_time) = resource.cache_data.get(REQUEST_TIME_KEY) {
             return CanServeCache::MustReinvalidateByRequestTime(request_time.parse().unwrap());
         }
-        return CanServeCache::No;
+        CanServeCache::No
     }
 
     fn insert_request_cache_data(cache_data: &mut HashMap<String, String>, header_name: String, header_value: Option<&str>) {
@@ -105,7 +123,7 @@ impl HttpImageFetcher {
         }
     }
 
-    fn get_cache_control(&self, resource: &String, header: Option<&str>) -> String {
+    fn get_cache_control(&self, resource: &str, header: Option<&str>) -> String {
         for overriden_cache in &self.config.overridden_cache {
             if resource.contains(&overriden_cache.domain) {
                 return overriden_cache.cache_control.clone();
@@ -130,19 +148,18 @@ pub enum FetchError {
 
 impl From<ureq::Error> for FetchError {
     fn from(err: ureq::Error) -> FetchError {
-        return FetchError::Unknown(String::from(format!("Unknown Reqwest error. {}", err)));
+        return FetchError::Unknown(format!("Unknown Reqwest error. {}", err));
     }
 }
 
 impl Fetcher<Resource> for HttpImageFetcher {
-    fn fetch(&self, resource: &String) -> Result<Resource, FetchError> {
-
-        match Url::parse(resource.as_str()) {
+    fn fetch(&self, resource: &str) -> Result<Resource, FetchError> {
+        match Url::parse(resource) {
             Ok(url) => {
-                if self.config.allow_from.len() > 0 {
+                if !self.config.allow_from.is_empty() {
                     if let Some(host) = url.host() {
                         let allowed_hosts = self.config.allow_from.clone();
-                        if let None = allowed_hosts.into_iter().find(|allowed_host| -> bool {
+                        if allowed_hosts.into_iter().any(|allowed_host| -> bool {
                             host.to_string().as_str().ends_with(allowed_host.as_str())
                         }) {
                             return Err(FetchError::NoAccess);
@@ -154,23 +171,19 @@ impl Fetcher<Resource> for HttpImageFetcher {
             }
             Err(parse_error) => return Err(FetchError::InvalidResourceTag(parse_error.to_string()))
         }
-        let resource_tag = generate_resource_tag(&resource);
+        let resource_tag = generate_resource_tag(resource);
         let cache_element: Option<TaggedElement<Resource>>;
         {
-            cache_element = match self.cache.read().unwrap().get(resource_tag.as_str()) {
-                Some(data) => {
-                    Some(bincode::deserialize(data.as_slice()).unwrap())
-                }
-                None => {
-                    None
-                }
-            }
+            cache_element = self.cache.read()
+                .unwrap()
+                .get(resource_tag.as_str())
+                .map(|data| bincode::deserialize(data.as_slice()).unwrap())
         }
         let request_builder: ureq::Request;
         if let Some(tagged_image) = &cache_element {
-            request_builder = match Self::can_serve_cache(&tagged_image) {
+            request_builder = match Self::can_serve_cache(tagged_image) {
                 CanServeCache::Yes => return Ok(tagged_image.object.clone()),
-                CanServeCache::MustReinvalidateETag(etag) => ureq::get(resource.as_str()).set(
+                CanServeCache::MustReinvalidateETag(etag) => ureq::get(resource).set(
                     http::header::IF_NONE_MATCH.as_str(),
                     etag.as_str()
                 ),
@@ -186,8 +199,8 @@ impl Fetcher<Resource> for HttpImageFetcher {
         let response_time: String = Utc::now().to_rfc3339();
         let response = request_builder.call().unwrap();
         match response.status() {
-            code if code >= 400 && code < 500 => return Err(FetchError::NotFound),
-            code if code >= 500 && code < 600 => return Err(FetchError::NotAvailable),
+            code if (400..500).contains(&code) => Err(FetchError::NotFound),
+            code if (500..600).contains(&code) => Err(FetchError::NotAvailable),
             code if code == StatusCode::OK => {
                 let mut cache_data: HashMap<String, String> = HashMap::new();
                 let content_type = match response.header(http::header::CONTENT_TYPE.as_str()) {
@@ -202,31 +215,28 @@ impl Fetcher<Resource> for HttpImageFetcher {
                 let mut http_hashmap: HashMap<String, String> = HashMap::default();
                 let cache_control_string = String::from(&cache_control);
                 if !cache_control_string.is_empty() {
-                    http_hashmap.insert(String::from(header::CACHE_CONTROL.to_string()), cache_control_string);
+                    http_hashmap.insert(header::CACHE_CONTROL.to_string(), cache_control_string);
                 }
                 let expire_string = cache_data.get(http::header::EXPIRES.as_str()).unwrap_or(&String::from("")).to_string();
                 if !expire_string.is_empty() {
-                    http_hashmap.insert(String::from(header::EXPIRES.to_string()), expire_string);
+                    http_hashmap.insert(header::EXPIRES.to_string(), expire_string);
                 }
                 let mut content = Vec::new();
                 response.into_reader().read_to_end(&mut content).unwrap();
                 let resource = TaggedElement {
                     object: Resource {
-                        content_type,
                         content,
-                        id: Uuid::new_v4().to_string(),
-                        additional_data: HashMap::from([(
+                        response_data: ResponseData{ content_type, id: Uuid::new_v4().to_string(), additional_data: HashMap::from([(
                             String::from(HTTP_ADDITIONAL_DATA_HEADERS_KEY),
                             http_hashmap
-                        )],
-                        ),
+                        )])},
                     },
                     cache_data,
                 };
                 {
                     self.cache.write().unwrap().set(
                         &resource_tag,
-                        &bincode::serialize(&resource.clone()).unwrap(),
+                        &bincode::serialize(&resource).unwrap(),
                     ).unwrap();
                 }
                 Ok(resource.object)
@@ -236,11 +246,30 @@ impl Fetcher<Resource> for HttpImageFetcher {
                     Some(cache_resource) => {
                         Ok((*cache_resource).clone().object)
                     }
-                    None => return Err(FetchError::Unknown("Server returned 'not modified' but the cache value doesn't exist.".to_string()))
+                    None => Err(FetchError::Unknown("Server returned 'not modified' but the cache value doesn't exist.".to_string()))
                 }
             }
             _ => {
-                todo!();
+                todo!()
+            }
+        }
+    }
+
+    fn serve_cache(&self, resource: &str) -> Option<ResponseData> {
+        let resource_tag = generate_resource_tag(resource);
+        let cache_element: Option<TaggedElement<Resource>>;
+        {
+            cache_element = self.cache.read()
+                .unwrap()
+                .get(resource_tag.as_str())
+                .map(|data| bincode::deserialize(data.as_slice()).unwrap());
+        }
+        match &cache_element {
+            Option::Some(tagged_image) => {
+                Option::Some(tagged_image.object.response_data.clone())
+            }
+            Option::None => {
+                Option::None
             }
         }
     }
@@ -248,198 +277,4 @@ impl Fetcher<Resource> for HttpImageFetcher {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::ops::{Add, Sub};
-    use std::sync::Mutex;
-
-    use actix_web::http::header;
-    use chrono::{Duration, Utc};
-    use httpmock::{MockServer, prelude::*};
-    use log4rs::append::console::ConsoleAppender;
-    use log4rs::Config;
-    use log4rs::config::{Appender, Root};
-    use log::LevelFilter;
-
-    use crate::cache::{CacheEngine, HashMapCacheEngine, NoCacheEngine};
-    use crate::config::Config as ApplicationConfig;
-    use crate::fetcher::{CanServeCache, CHRONO_HTTP_DATE_FORMAT, Fetcher, generate_resource_tag, HttpImageFetcher, REQUEST_TIME_KEY, Resource};
-    use crate::tagged_element::TaggedElement;
-
-    fn init() {
-        let stdout = ConsoleAppender::builder().build();
-        let config = Config::builder()
-            .appender(Appender::builder().build("stdout", Box::new(stdout)))
-            .build(Root::builder().appender("stdout").build(LevelFilter::Trace))
-            .unwrap();
-        match log4rs::init_config(config) {
-            Err(_) => {}
-            _ => {}
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_get_new_resource() {
-        let cache = Mutex::from(Box::from(NoCacheEngine {}) as Box<dyn CacheEngine + Send>);
-        let fetcher = HttpImageFetcher { cache: &cache, config: ApplicationConfig::default() };
-        let server = MockServer::start();
-        let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
-
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/image.png");
-            then.status(200)
-                .header("content-type", "application/png")
-                .body(mock_body.clone());
-        });
-
-        let resource = fetcher.fetch(&format!("http://{}:{}/image.png", server.host(), server.port())).await.ok().unwrap();
-        assert_eq!(resource.content, mock_body)
-    }
-
-    #[actix_rt::test]
-    async fn test_should_set_cache_value() {
-        let hashmap = HashMapCacheEngine::default();
-        let cache = Mutex::from(Box::from(hashmap) as Box<dyn CacheEngine + Send>);
-        let fetcher = HttpImageFetcher { cache: &cache, config: ApplicationConfig::default() };
-        let server = MockServer::start();
-        let mock_body: Vec<u8> = Vec::from([0, 1, 2, 3, 4, 5]);
-
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/image.png");
-            then.status(200)
-                .header("content-type", "application/png")
-                .body(mock_body.clone());
-        });
-        let resource_url = format!("http://{}:{}/image.png", server.host(), server.port());
-        fetcher.fetch(&resource_url).ok().unwrap();
-        let cache_value = cache.lock().unwrap().get(generate_resource_tag(&resource_url).as_str());
-        let tagged_resource: TaggedElement<Resource> = bincode::deserialize(&cache_value.unwrap()).unwrap();
-        assert_eq!(tagged_resource.object.content, mock_body)
-    }
-
-    #[test]
-    fn test_no_cache_if_no_headers() {
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data: HashMap::default(),
-        });
-        assert_eq!(can_serve, CanServeCache::No);
-    }
-
-    #[test]
-    fn test_can_serve_cache_immutable() {
-        let mut cache_data = HashMap::default();
-        cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("immutable"));
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::Yes);
-    }
-
-    #[test]
-    fn test_no_cache_if_no_store() {
-        let mut cache_data = HashMap::default();
-        cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("no-store"));
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::No);
-    }
-
-    #[test]
-    fn test_cache_depending_on_max_age_not_expired_59_seconds() {
-        let mut cache_data = HashMap::default();
-        cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
-        cache_data.insert(REQUEST_TIME_KEY.to_string(), Utc::now().sub(Duration::seconds(59)).to_rfc3339());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::Yes);
-    }
-
-    #[test]
-    fn test_cache_depending_on_max_age_must_reinvalidate_after_60_seconds() {
-        init();
-        let mut cache_data = HashMap::default();
-        let request_time = Utc::now().sub(Duration::seconds(60));
-        cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
-        cache_data.insert(REQUEST_TIME_KEY.to_string(), request_time.to_rfc3339());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::MustReinvalidateByRequestTime(request_time.clone()));
-    }
-
-    #[test]
-    fn test_cache_depending_on_max_age_must_reinvalidate_etag_after_60_seconds() {
-        init();
-        let mut cache_data = HashMap::default();
-        let request_time = Utc::now().sub(Duration::seconds(60));
-        let etag = "W/11";
-        cache_data.insert(header::CACHE_CONTROL.to_string(), String::from("max-age=60"));
-        cache_data.insert(header::ETAG.to_string(), etag.to_string());
-        cache_data.insert(REQUEST_TIME_KEY.to_string(), request_time.to_rfc3339());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::MustReinvalidateETag(etag.to_string()));
-    }
-
-    #[test]
-    fn test_cache_depending_on_expires_valid_date() {
-        init();
-        let mut cache_data = HashMap::default();
-        let request_time = Utc::now().add(Duration::seconds(10));
-        cache_data.insert(header::EXPIRES.to_string(), request_time.format(CHRONO_HTTP_DATE_FORMAT).to_string());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::Yes);
-    }
-
-    #[test]
-    fn test_cache_depending_on_expires_expired_date() {
-        init();
-        let mut cache_data = HashMap::default();
-        let request_time = Utc::now().sub(Duration::seconds(10));
-        cache_data.insert(header::EXPIRES.to_string(), request_time.format(CHRONO_HTTP_DATE_FORMAT).to_string());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::No);
-    }
-
-    #[test]
-    fn test_cache_etag_reinvalidation_if_cache_headers_not_exist() {
-        init();
-        let mut cache_data = HashMap::default();
-        let etag = "W/38271";
-        cache_data.insert(header::ETAG.to_string(), etag.to_string());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::MustReinvalidateETag(etag.to_string()));
-    }
-
-    #[test]
-    fn test_cache_modified_date_reinvalidation_if_cache_headers_not_exist() {
-        init();
-        let mut cache_data = HashMap::default();
-        let request_date = Utc::now().sub(Duration::seconds(59));
-        cache_data.insert(REQUEST_TIME_KEY.to_string(), request_date.to_rfc3339());
-        let can_serve = HttpImageFetcher::can_serve_cache(&TaggedElement {
-            object: Resource::default(),
-            cache_data,
-        });
-        assert_eq!(can_serve, CanServeCache::MustReinvalidateByRequestTime(request_date));
-    }
 }

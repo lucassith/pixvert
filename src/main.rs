@@ -26,6 +26,7 @@ mod routes;
 mod resizer;
 mod encoder;
 mod decoder;
+mod output_dimensions;
 
 pub struct AppState {
     config: Mutex<Config>,
@@ -91,7 +92,7 @@ async fn main() -> std::io::Result<()> {
             cache: c_arc_cache.clone(),
         });
         App::new()
-            .app_data(app_state.clone().clone())
+            .app_data(app_state)
             .route("/_health", web::get().to(health))
             .route("/cache", web::get().to(health))
             .route("/{width}_{height}/keep-ratio/{format}/{tail:.*}", web::get().to(index_with_ratio))
@@ -103,7 +104,7 @@ async fn main() -> std::io::Result<()> {
     })
         .bind("0.0.0.0:8080")?
         .run()
-        .await;
+        .await?;
     if let CacheType::File(path) = &config.cache.cache_type {
         if path.starts_with(&String::from(std::env::temp_dir().to_string_lossy())) {
             info!("Cleaning temp dir: {}", path);
@@ -111,7 +112,6 @@ async fn main() -> std::io::Result<()> {
         } else {
             warn!("Unable to delete file cache catalog. Temp is set to {} and it is outside of system's tmp dir: {}. Please remove the cache dir.", path, std::env::temp_dir().to_str().unwrap());
         }
-
     }
     Result::Ok(())
 }

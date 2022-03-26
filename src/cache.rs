@@ -40,14 +40,11 @@ impl Default for HashMapCacheEngine {
 
 impl CacheEngine for HashMapCacheEngine {
     fn get(&self, name: &str) -> Option<Vec<u8>> {
-        return match self.hashmap.lock().unwrap().get(name) {
-            Some(value) => Some(value.clone()),
-            None => None
-        };
+        return self.hashmap.lock().unwrap().get(name).cloned();
     }
 
     fn set(&self, name: &str, data: &Vec<u8>) -> Result<bool, Error> {
         self.hashmap.lock().unwrap().insert(name.to_string(), data.clone());
-        return Ok(true);
+        Ok(true)
     }
 }

@@ -1,7 +1,7 @@
 use image_crate::{DynamicImage, RgbaImage};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Image {
     pub image: Vec<u8>,
     pub width: u32,
@@ -20,18 +20,11 @@ impl From<DynamicImage> for Image {
 
 impl From<Image> for DynamicImage {
     fn from(img: Image) -> Self {
-        return DynamicImage::ImageRgba8(
+        DynamicImage::ImageRgba8(
             RgbaImage::from_raw(img.width, img.height, img.image).unwrap()
-        );
+        )
     }
 }
-
-impl Default for Image {
-    fn default() -> Self {
-        Image { image: Vec::default(), width: 0, height: 0 }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -41,7 +34,7 @@ mod tests {
 
     #[test]
     fn serialize_image_struct() {
-        let mut img: DynamicImage = DynamicImage::new_rgb8(2, 3).into();
+        let mut img: DynamicImage = DynamicImage::new_rgb8(2, 3);
         img.put_pixel(1, 1, Rgba([255, 0, 100, 255]));
 
         let image_struct: image::Image = img.into();
