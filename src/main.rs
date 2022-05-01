@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
 use std::sync::{Arc, Mutex, RwLock};
+use actix_cors::Cors;
 
 use actix_web::{App, HttpServer, web};
 use figment::Figment;
@@ -82,6 +83,9 @@ async fn main() -> std::io::Result<()> {
         };
         let encoder = AllInOneCachedImageEncoder { cache: c_arc_cache.clone() };
         let decoder = CachedImageDecoder { cache: c_arc_cache.clone() };
+        let cors = Cors::default()
+            .allowed_methods(vec!["GET"])
+            .allowed_origin(&config_clone.cors.origin);
 
         let app_state = web::Data::new(AppState {
             config: Mutex::new(config_clone.clone()),
@@ -93,6 +97,7 @@ async fn main() -> std::io::Result<()> {
         });
         App::new()
             .app_data(app_state)
+            .wrap(cors)
             .route("/_health", web::get().to(health))
             .route("/cache", web::get().to(health))
             .route("/{width}_{height}/keep-ratio/{format}/{tail:.*}", web::get().to(index_with_ratio))

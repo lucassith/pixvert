@@ -9,11 +9,11 @@ use crate::fetcher::FetchError;
 use crate::output_dimensions::OutputDimensions;
 use crate::resizer::ResizeError;
 
-pub fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+pub async fn index(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     generate_image(req, data, false)
 }
 
-pub fn index_with_ratio(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+pub async fn index_with_ratio(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
     generate_image(req, data, true)
 }
 

@@ -22,8 +22,15 @@ pub struct ApplicationCache {
 
 #[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct CorsSettings {
+    pub origin: String,
+}
+
+#[derive(Serialize, Debug, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     pub allow_from: Vec<String>,
+    pub cors: CorsSettings,
     pub overridden_cache: Vec<OverriddenCache>,
     pub maximum_image_size: usize,
     pub cache: ApplicationCache,
@@ -34,16 +41,17 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             allow_from: vec![String::from("localhost")],
+            cors: CorsSettings{
+                origin: String::from("*")
+            },
             maximum_image_size: 3840 * 2160, // 4K
-            overridden_cache: Vec::from(
-                vec![
-                    OverriddenCache {
-                        domain: String::from("localhost"),
-                        cache_control: String::from("immutable"),
-                    }
-                ]
-            ),
-            cache: ApplicationCache{ cache_type:CacheType::InMemory }
+            overridden_cache: vec![
+                OverriddenCache {
+                    domain: String::from("localhost"),
+                    cache_control: String::from("immutable"),
+                }
+            ],
+            cache: ApplicationCache { cache_type: CacheType::InMemory },
         }
     }
 }
